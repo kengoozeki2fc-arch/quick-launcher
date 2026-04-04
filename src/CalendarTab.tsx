@@ -228,8 +228,6 @@ export default function CalendarTab() {
 
         if (data.access_token) {
           clearInterval(poll);
-          setPolling(false);
-          setDeviceCode(null);
           const newSettings: CalendarSettings = {
             tenantId: tid,
             clientId: cid,
@@ -237,9 +235,12 @@ export default function CalendarTab() {
             refreshToken: (data.refresh_token as string) ?? "",
             tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
           };
-          await saveCalSettings(newSettings);
+          // UIを先に更新してから保存
           setSettings(newSettings);
           setShowSettings(false);
+          setPolling(false);
+          setDeviceCode(null);
+          saveCalSettings(newSettings).catch(() => {}); // 非同期保存
         } else if (data.error === "expired_token" || data.error === "code_already_used") {
           clearInterval(poll);
           setPolling(false);
