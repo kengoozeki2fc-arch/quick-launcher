@@ -9,6 +9,7 @@
     "core:default",
     "shell:allow-open",
     "fs:allow-desktop-read-recursive",
-    "fs:allow-desktop-write-recursive"
+    "fs:allow-desktop-write-recursive",
+    "http:default"
   ]
 }

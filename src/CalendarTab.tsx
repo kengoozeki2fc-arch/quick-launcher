@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+
+// Tauri環境ではネイティブfetch、ブラウザ開発時は標準fetch
+const httpFetch: typeof fetch = (typeof window !== "undefined" && (window as any).__TAURI__)
+  ? (tauriFetch as unknown as typeof fetch)
+  : fetch;
 
 interface CalendarSettings {
   tenantId: string;
@@ -69,7 +75,7 @@ export default function CalendarTab() {
 
   const refreshAccessToken = useCallback(async (s: CalendarSettings): Promise<CalendarSettings | null> => {
     try {
-      const res = await fetch(
+      const res = await httpFetch(
         `https://login.microsoftonline.com/${s.tenantId}/oauth2/v2.0/token`,
         {
           method: "POST",
@@ -122,7 +128,7 @@ export default function CalendarTab() {
     afterTomorrow.setDate(afterTomorrow.getDate() + 2);
 
     try {
-      const res = await fetch(
+      const res = await httpFetch(
         `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location,bodyPreview&$orderby=start/dateTime&$top=50`,
         {
           headers: {
@@ -178,7 +184,7 @@ export default function CalendarTab() {
     setDeviceCode(null);
 
     try {
-      const res = await fetch(
+      const res = await httpFetch(
         `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
         {
           method: "POST",
@@ -210,7 +216,7 @@ export default function CalendarTab() {
     setPolling(true);
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(
+        const res = await httpFetch(
           `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`,
           {
             method: "POST",
