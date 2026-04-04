@@ -3,15 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { readTextFile, writeTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 
 const CAL_FILE = "quick-launcher-calendar.json";
-const GRAPH_SCOPE = "Calendars.Read offline_access";
-
-async function msPost(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
-  const raw = await invoke<string>("http_post", { url, params });
-  return JSON.parse(raw);
-}
 
 async function msGet(url: string, accessToken: string): Promise<Record<string, unknown>> {
   const raw = await invoke<string>("http_get", { url, accessToken });
+  return JSON.parse(raw);
+}
+
+async function msPost(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+  const raw = await invoke<string>("http_post", { url, params });
   return JSON.parse(raw);
 }
 
@@ -20,7 +19,8 @@ async function loadCalSettings(): Promise<CalendarSettings | null> {
     const fileExists = await exists(CAL_FILE, { baseDir: BaseDirectory.Desktop });
     if (!fileExists) return null;
     const raw = await readTextFile(CAL_FILE, { baseDir: BaseDirectory.Desktop });
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    return data.accessToken ? data : null;
   } catch {
     return null;
   }
@@ -30,10 +30,6 @@ async function saveCalSettings(s: CalendarSettings) {
   await writeTextFile(CAL_FILE, JSON.stringify(s, null, 2), {
     baseDir: BaseDirectory.Desktop,
   });
-}
-
-async function deleteCalSettings() {
-  await writeTextFile(CAL_FILE, "{}", { baseDir: BaseDirectory.Desktop });
 }
 
 interface CalendarSettings {
@@ -69,12 +65,7 @@ export default function CalendarTab() {
   const [loaded, setLoaded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  const [deviceCode, setDeviceCode] = useState<{
-    userCode: string;
-    verificationUri: string;
-    deviceCode: string;
-  } | null>(null);
-  const [polling, setPolling] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
@@ -91,17 +82,10 @@ export default function CalendarTab() {
         setClientId(s.clientId);
         setShowSettings(false);
       } else {
-        if (s?.tenantId) setTenantId(s.tenantId);
-        if (s?.clientId) setClientId(s.clientId);
         setShowSettings(true);
       }
       setLoaded(true);
     });
-  }, []);
-
-  const updateSettings = useCallback(async (s: CalendarSettings) => {
-    await saveCalSettings(s);
-    setSettings(s);
   }, []);
 
   const refreshAccessToken = useCallback(async (s: CalendarSettings): Promise<CalendarSettings | null> => {
@@ -112,7 +96,7 @@ export default function CalendarTab() {
           client_id: s.clientId,
           grant_type: "refresh_token",
           refresh_token: s.refreshToken,
-          scope: GRAPH_SCOPE,
+          scope: "Calendars.Read offline_access",
         }
       );
       if (data.access_token) {
@@ -122,14 +106,15 @@ export default function CalendarTab() {
           refreshToken: (data.refresh_token as string) ?? s.refreshToken,
           tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
         };
-        await updateSettings(updated);
+        saveCalSettings(updated).catch(() => {});
+        setSettings(updated);
         return updated;
       }
       return null;
     } catch {
       return null;
     }
-  }, [updateSettings]);
+  }, []);
 
   const fetchEvents = useCallback(async (s: CalendarSettings) => {
     setLoading(true);
@@ -158,8 +143,8 @@ export default function CalendarTab() {
       );
 
       if (data.error) {
-        const errObj = data.error as Record<string, unknown>;
-        setCalError(`取得エラー: ${errObj.message ?? JSON.stringify(data.error)}`);
+        const err = data.error as Record<string, unknown>;
+        setCalError(`取得エラー: ${err.message ?? JSON.stringify(data.error)}`);
         setLoading(false);
         return;
       }
@@ -179,117 +164,57 @@ export default function CalendarTab() {
     }
   }, [refreshAccessToken]);
 
-  // 認証済みで読込完了後に自動取得
   useEffect(() => {
     if (loaded && settings?.accessToken && !showSettings) {
       fetchEvents(settings);
     }
   }, [loaded, settings, showSettings, fetchEvents]);
 
-  const startDeviceCodeFlow = async () => {
+  const handleConnect = async () => {
     if (!tenantId || !clientId) return;
     setAuthError(null);
-    setDeviceCode(null);
+    setConnecting(true);
 
     try {
-      const data = await msPost(
-        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
-        { client_id: clientId, scope: GRAPH_SCOPE }
-      );
+      // Rustのstart_oauth_flowを呼ぶ（PKCEフロー）
+      const raw = await invoke<string>("start_oauth_flow", {
+        tenantId,
+        clientId,
+      });
+      const data = JSON.parse(raw);
 
       if (data.error) {
-        setAuthError((data.error_description as string) ?? (data.error as string));
+        setAuthError(`認証エラー: ${data.error_description ?? data.error}`);
         return;
       }
 
-      const dc = data.device_code as string;
-      setDeviceCode({
-        userCode: data.user_code as string,
-        verificationUri: data.verification_uri as string,
-        deviceCode: dc,
-      });
-      setManualDc({ tid: tenantId, cid: clientId, dc });
-      pollForToken(tenantId, clientId, dc, (data.interval as number) ?? 5);
+      if (data.access_token) {
+        const newSettings: CalendarSettings = {
+          tenantId,
+          clientId,
+          accessToken: data.access_token as string,
+          refreshToken: (data.refresh_token as string) ?? "",
+          tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
+        };
+        setSettings(newSettings);
+        setShowSettings(false);
+        saveCalSettings(newSettings).catch(() => {});
+      } else {
+        setAuthError("トークンの取得に失敗しました");
+      }
     } catch (err) {
       setAuthError(`接続に失敗しました: ${err}`);
-    }
-  };
-
-  const applyToken = useCallback(async (tid: string, cid: string, data: Record<string, unknown>) => {
-    const newSettings: CalendarSettings = {
-      tenantId: tid,
-      clientId: cid,
-      accessToken: data.access_token as string,
-      refreshToken: (data.refresh_token as string) ?? "",
-      tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
-    };
-    setSettings(newSettings);
-    setShowSettings(false);
-    setPolling(false);
-    setDeviceCode(null);
-    setAuthError(null);
-    saveCalSettings(newSettings).catch(() => {});
-  }, []);
-
-  const pollForToken = useCallback((tid: string, cid: string, dc: string, interval: number) => {
-    setPolling(true);
-    const poll = setInterval(async () => {
-      try {
-        const data = await msPost(
-          `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`,
-          {
-            client_id: cid,
-            grant_type: "urn:ietf:params:oauth2:grant-type:device_code",
-            device_code: dc,
-          }
-        );
-        if (data.access_token) {
-          clearInterval(poll);
-          await applyToken(tid, cid, data);
-        } else if (data.error === "expired_token" || data.error === "code_already_used") {
-          clearInterval(poll);
-          setPolling(false);
-          setDeviceCode(null);
-          setAuthError("コードが期限切れです。再度お試しください。");
-        }
-      } catch {
-        // 一時的なエラーは無視
-      }
-    }, interval * 1000);
-  }, [applyToken]);
-
-  // 手動で認証完了を確認するボタン用
-  const [manualDc, setManualDc] = useState<{tid: string; cid: string; dc: string} | null>(null);
-
-  const checkTokenManually = async () => {
-    if (!manualDc) return;
-    try {
-      const data = await msPost(
-        `https://login.microsoftonline.com/${manualDc.tid}/oauth2/v2.0/token`,
-        {
-          client_id: manualDc.cid,
-          grant_type: "urn:ietf:params:oauth2:grant-type:device_code",
-          device_code: manualDc.dc,
-        }
-      );
-      if (data.access_token) {
-        await applyToken(manualDc.tid, manualDc.cid, data);
-      } else {
-        setAuthError(`未完了: ${data.error ?? "再度ブラウザで認証してください"}`);
-      }
-    } catch (err) {
-      setAuthError(`確認失敗: ${err}`);
+    } finally {
+      setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    await deleteCalSettings();
+    await saveCalSettings({ tenantId: "", clientId: "", accessToken: "", refreshToken: "", tokenExpiry: 0 });
     setSettings(null);
     setTodayEvents([]);
     setTomorrowEvents([]);
     setShowSettings(true);
-    setDeviceCode(null);
-    setPolling(false);
   };
 
   const today = new Date();
@@ -310,86 +235,32 @@ export default function CalendarTab() {
           )}
         </div>
 
-        <div className="cal-info-box">
-          <p><strong>事前準備:</strong> Azure Portal でアプリ登録が必要です。</p>
-          <ol>
-            <li>Azure Portal → Microsoft Entra ID → アプリの登録</li>
-            <li>認証 → パブリック クライアント フローを有効化</li>
-            <li>APIのアクセス許可: <code>Calendars.Read</code>（委任）</li>
-          </ol>
+        <div className="form-group">
+          <label>テナントID（Directory ID）</label>
+          <input
+            value={tenantId}
+            onChange={(e) => setTenantId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          />
+        </div>
+        <div className="form-group">
+          <label>クライアントID（Application ID）</label>
+          <input
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          />
         </div>
 
-        <form onSubmit={(e) => e.preventDefault()} className="cal-form">
-          <div className="form-group">
-            <label>テナントID（Directory ID）</label>
-            <input
-              value={tenantId}
-              onChange={(e) => setTenantId(e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>クライアントID（Application ID）</label>
-            <input
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              required
-            />
-          </div>
+        {authError && <div className="cal-error">{authError}</div>}
 
-          {authError && <div className="cal-error">{authError}</div>}
-
-          {!deviceCode && !polling && (
-            <button
-              type="button"
-              className="btn-save cal-connect-btn"
-              onClick={startDeviceCodeFlow}
-              disabled={!tenantId || !clientId}
-            >
-              Outlookに接続
-            </button>
-          )}
-        </form>
-
-        {deviceCode && (
-          <div className="device-code-box">
-            <p className="device-code-title">以下の手順で認証してください</p>
-            <ol>
-              <li>
-                <a href={deviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-link">
-                  {deviceCode.verificationUri}
-                </a>
-                を開く
-              </li>
-              <li>このコードを入力:</li>
-            </ol>
-            <div className="device-code-value">{deviceCode.userCode}</div>
-            {polling && <p className="device-code-waiting">✓ 認証を待機中...</p>}
-            <button
-              type="button"
-              className="btn-save"
-              style={{ marginTop: 10, width: "100%" }}
-              onClick={checkTokenManually}
-            >
-              ✅ ブラウザで認証しました
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              style={{ marginTop: 6, width: "100%" }}
-              onClick={() => {
-                setDeviceCode(null);
-                setPolling(false);
-                setManualDc(null);
-                setTimeout(() => startDeviceCodeFlow(), 100);
-              }}
-            >
-              🔄 コードを再発行
-            </button>
-          </div>
-        )}
+        <button
+          className="btn-save cal-connect-btn"
+          onClick={handleConnect}
+          disabled={!tenantId || !clientId || connecting}
+        >
+          {connecting ? "ブラウザで認証中... （完了するとアプリに戻ります）" : "Outlookに接続"}
+        </button>
 
         {settings?.accessToken && (
           <button className="icon-btn danger cal-disconnect-btn" onClick={handleDisconnect}>

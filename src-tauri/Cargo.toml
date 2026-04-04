@@ -27,3 +27,8 @@ tauri-plugin-shell = "2.3.5"
 tauri-plugin-fs = "2.4.5"
 tauri-plugin-http = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+tokio = { version = "1", features = ["net", "io-util", "time"] }
+urlencoding = "2"
