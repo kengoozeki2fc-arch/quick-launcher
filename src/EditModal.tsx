@@ -12,6 +12,7 @@ export default function EditModal({ item, onSave, onCancel }: Props) {
   const [url, setUrl] = useState(item?.url ?? "");
   const [loginId, setLoginId] = useState(item?.loginId ?? "");
   const [password, setPassword] = useState(item?.password ?? "");
+  const [otp, setOtp] = useState(item?.otp ?? false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,6 +22,7 @@ export default function EditModal({ item, onSave, onCancel }: Props) {
       url,
       loginId,
       password,
+      otp,
     });
   };
 
@@ -66,6 +68,16 @@ export default function EditModal({ item, onSave, onCancel }: Props) {
               placeholder="••••••••"
               required
             />
+          </div>
+          <div className="form-group form-checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={otp}
+                onChange={(e) => setOtp(e.target.checked)}
+              />
+              OTP（ワンタイムパスワード）
+            </label>
           </div>
           <div className="modal-actions">
             <button type="button" className="btn-cancel" onClick={onCancel}>

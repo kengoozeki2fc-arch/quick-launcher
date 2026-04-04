@@ -121,7 +121,7 @@ body {
 
 .item-label {
   color: #9e6070;
-  min-width: 28px;
+  min-width: 32px;
 }
 
 .item-value {
@@ -232,6 +232,121 @@ body {
 .btn-save {
   background: #e91e63;
   color: #fff;
+}
+
+/* Search */
+.search-bar {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #f8bbd0;
+  background: #fff;
+  color: #4a2c2a;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-bar input:focus {
+  border-color: #e91e63;
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9e6070;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.status-bar {
+  font-size: 12px;
+  color: #9e6070;
+  margin-bottom: 10px;
+  text-align: right;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f8bbd0;
+}
+
+.pagination button {
+  background: #fff0f3;
+  border: 1px solid #f8bbd0;
+  border-radius: 6px;
+  color: #c2185b;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+  background: #e91e63;
+  color: #fff;
+  border-color: #e91e63;
+}
+
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.page-info {
+  font-size: 13px;
+  color: #9e6070;
+  min-width: 60px;
+  text-align: center;
+}
+
+/* OTP Badge */
+.otp-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #9e6070;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.otp-badge input[type="checkbox"] {
+  accent-color: #e91e63;
+  width: 14px;
+  height: 14px;
+}
+
+/* Form checkbox */
+.form-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #4a2c2a;
+  cursor: pointer;
+}
+
+.form-checkbox input[type="checkbox"] {
+  accent-color: #e91e63;
+  width: 16px;
+  height: 16px;
 }
 
 .empty-state {

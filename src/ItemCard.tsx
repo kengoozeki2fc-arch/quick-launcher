@@ -24,7 +24,7 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       title="コピー"
     >
-      {copied ? "✓" : "📋"}
+      {copied ? "✓" : "⧉"}
     </button>
   );
 }
@@ -51,6 +51,12 @@ export default function ItemCard({ item, onOpen, onEdit, onDelete }: Props) {
       </div>
 
       <div className="item-row">
+        <span className="item-label">URL</span>
+        <span className="item-value">{item.url}</span>
+        <CopyButton text={item.url} />
+      </div>
+
+      <div className="item-row">
         <span className="item-label">ID</span>
         <span className="item-value">{item.loginId}</span>
         <CopyButton text={item.loginId} />
@@ -60,6 +66,10 @@ export default function ItemCard({ item, onOpen, onEdit, onDelete }: Props) {
         <span className="item-label">PW</span>
         <span className="item-value">{item.password}</span>
         <CopyButton text={item.password} />
+        <label className="otp-badge">
+          <input type="checkbox" checked={item.otp} disabled />
+          OTP
+        </label>
       </div>
     </div>
   );

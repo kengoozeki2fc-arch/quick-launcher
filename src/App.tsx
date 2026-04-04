@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import type { LauncherItem } from "./types";
 import ItemCard from "./ItemCard";
 import EditModal from "./EditModal";
 
 const STORAGE_KEY = "quick-launcher-items";
+const PAGE_SIZE = 25;
 
 function loadItems(): LauncherItem[] {
   try {
@@ -23,10 +24,35 @@ export default function App() {
   const [items, setItems] = useState<LauncherItem[]>(loadItems);
   const [editingItem, setEditingItem] = useState<LauncherItem | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     saveItems(items);
   }, [items]);
+
+  // 検索でページをリセット
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return items;
+    const q = search.toLowerCase();
+    return items.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.url.toLowerCase().includes(q) ||
+        i.loginId.toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   const handleAdd = () => {
     setEditingItem(null);
@@ -72,23 +98,64 @@ export default function App() {
         </button>
       </div>
 
-      {items.length === 0 ? (
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="検索（タイトル・URL・ID）"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search && (
+          <button className="search-clear" onClick={() => setSearch("")}>
+            ✕
+          </button>
+        )}
+      </div>
+
+      <div className="status-bar">
+        全 {filtered.length} 件
+        {search && ` （${items.length} 件中）`}
+      </div>
+
+      {pageItems.length === 0 ? (
         <div className="empty-state">
           <p style={{ fontSize: 32 }}>🚀</p>
-          <p>「+ 追加」からサービスを登録しよう</p>
+          <p>{search ? "該当するサービスがありません" : "「+ 追加」からサービスを登録しよう"}</p>
         </div>
       ) : (
-        <div className="item-list">
-          {items.map((item) => (
-            <ItemCard
-              key={item.id}
-              item={item}
-              onOpen={handleOpen}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
+        <>
+          <div className="item-list">
+            {pageItems.map((item) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                onOpen={handleOpen}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button disabled={currentPage === 1} onClick={() => setPage(1)}>
+                最初
+              </button>
+              <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                前へ
+              </button>
+              <span className="page-info">
+                {currentPage} / {totalPages}
+              </span>
+              <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
+                次へ
+              </button>
+              <button disabled={currentPage === totalPages} onClick={() => setPage(totalPages)}>
+                最後
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {showModal && (

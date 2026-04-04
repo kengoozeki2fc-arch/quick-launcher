@@ -4,4 +4,5 @@ export interface LauncherItem {
   url: string;
   loginId: string;
   password: string;
+  otp: boolean;
 }
