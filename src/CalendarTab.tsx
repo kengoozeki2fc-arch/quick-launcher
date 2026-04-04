@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { readTextFile, writeTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
+
+const CAL_FILE = "quick-launcher-calendar.json";
+const GRAPH_SCOPE = "Calendars.Read offline_access";
 
 async function msPost(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
   const raw = await invoke<string>("http_post", { url, params });
@@ -9,6 +13,27 @@ async function msPost(url: string, params: Record<string, string>): Promise<Reco
 async function msGet(url: string, accessToken: string): Promise<Record<string, unknown>> {
   const raw = await invoke<string>("http_get", { url, accessToken });
   return JSON.parse(raw);
+}
+
+async function loadCalSettings(): Promise<CalendarSettings | null> {
+  try {
+    const fileExists = await exists(CAL_FILE, { baseDir: BaseDirectory.Desktop });
+    if (!fileExists) return null;
+    const raw = await readTextFile(CAL_FILE, { baseDir: BaseDirectory.Desktop });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function saveCalSettings(s: CalendarSettings) {
+  await writeTextFile(CAL_FILE, JSON.stringify(s, null, 2), {
+    baseDir: BaseDirectory.Desktop,
+  });
+}
+
+async function deleteCalSettings() {
+  await writeTextFile(CAL_FILE, "{}", { baseDir: BaseDirectory.Desktop });
 }
 
 interface CalendarSettings {
@@ -28,22 +53,6 @@ interface CalendarEvent {
   location?: { displayName: string };
 }
 
-const SETTINGS_KEY = "wl_calendar_settings";
-const GRAPH_SCOPE = "Calendars.Read offline_access";
-
-function loadSettings(): CalendarSettings | null {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveSettings(s: CalendarSettings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-}
-
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -54,10 +63,11 @@ function formatDateLabel(d: Date): string {
 }
 
 export default function CalendarTab() {
-  const [settings, setSettings] = useState<CalendarSettings | null>(loadSettings);
-  const [tenantId, setTenantId] = useState(loadSettings()?.tenantId ?? "");
-  const [clientId, setClientId] = useState(loadSettings()?.clientId ?? "");
-  const [showSettings, setShowSettings] = useState(!loadSettings()?.accessToken);
+  const [settings, setSettings] = useState<CalendarSettings | null>(null);
+  const [tenantId, setTenantId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const [deviceCode, setDeviceCode] = useState<{
     userCode: string;
@@ -72,7 +82,27 @@ export default function CalendarTab() {
   const [loading, setLoading] = useState(false);
   const [calError, setCalError] = useState<string | null>(null);
 
-  const isAuthenticated = !!settings?.accessToken;
+  // 起動時にファイルから読み込み
+  useEffect(() => {
+    loadCalSettings().then((s) => {
+      if (s?.accessToken) {
+        setSettings(s);
+        setTenantId(s.tenantId);
+        setClientId(s.clientId);
+        setShowSettings(false);
+      } else {
+        if (s?.tenantId) setTenantId(s.tenantId);
+        if (s?.clientId) setClientId(s.clientId);
+        setShowSettings(true);
+      }
+      setLoaded(true);
+    });
+  }, []);
+
+  const updateSettings = useCallback(async (s: CalendarSettings) => {
+    await saveCalSettings(s);
+    setSettings(s);
+  }, []);
 
   const refreshAccessToken = useCallback(async (s: CalendarSettings): Promise<CalendarSettings | null> => {
     try {
@@ -92,15 +122,14 @@ export default function CalendarTab() {
           refreshToken: (data.refresh_token as string) ?? s.refreshToken,
           tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
         };
-        saveSettings(updated);
-        setSettings(updated);
+        await updateSettings(updated);
         return updated;
       }
       return null;
     } catch {
       return null;
     }
-  }, []);
+  }, [updateSettings]);
 
   const fetchEvents = useCallback(async (s: CalendarSettings) => {
     setLoading(true);
@@ -129,7 +158,8 @@ export default function CalendarTab() {
       );
 
       if (data.error) {
-        setCalError(`取得エラー: ${(data.error as Record<string, unknown>).message ?? JSON.stringify(data.error)}`);
+        const errObj = data.error as Record<string, unknown>;
+        setCalError(`取得エラー: ${errObj.message ?? JSON.stringify(data.error)}`);
         setLoading(false);
         return;
       }
@@ -149,11 +179,12 @@ export default function CalendarTab() {
     }
   }, [refreshAccessToken]);
 
+  // 認証済みで読込完了後に自動取得
   useEffect(() => {
-    if (settings?.accessToken && !showSettings) {
+    if (loaded && settings?.accessToken && !showSettings) {
       fetchEvents(settings);
     }
-  }, [settings, showSettings, fetchEvents]);
+  }, [loaded, settings, showSettings, fetchEvents]);
 
   const startDeviceCodeFlow = async () => {
     if (!tenantId || !clientId) return;
@@ -206,14 +237,14 @@ export default function CalendarTab() {
             refreshToken: (data.refresh_token as string) ?? "",
             tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
           };
-          saveSettings(newSettings);
+          await saveCalSettings(newSettings);
           setSettings(newSettings);
           setShowSettings(false);
         } else if (data.error === "expired_token" || data.error === "code_already_used") {
           clearInterval(poll);
           setPolling(false);
           setDeviceCode(null);
-          setAuthError("コードが期限切れです。もう一度試してください。");
+          setAuthError("コードが期限切れです。再度お試しください。");
         }
       } catch {
         // 一時的なエラーは無視
@@ -221,8 +252,8 @@ export default function CalendarTab() {
     }, interval * 1000);
   };
 
-  const handleDisconnect = () => {
-    localStorage.removeItem(SETTINGS_KEY);
+  const handleDisconnect = async () => {
+    await deleteCalSettings();
     setSettings(null);
     setTodayEvents([]);
     setTomorrowEvents([]);
@@ -235,12 +266,16 @@ export default function CalendarTab() {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
+  if (!loaded) {
+    return <div className="tab-content"><div className="cal-empty">読み込み中...</div></div>;
+  }
+
   if (showSettings) {
     return (
       <div className="tab-content">
         <div className="cal-settings-header">
           <h3 className="cal-section-title">Outlookカレンダー接続設定</h3>
-          {isAuthenticated && (
+          {settings?.accessToken && (
             <button className="icon-btn" onClick={() => setShowSettings(false)}>← 戻る</button>
           )}
         </div>
@@ -317,7 +352,7 @@ export default function CalendarTab() {
           </div>
         )}
 
-        {isAuthenticated && (
+        {settings?.accessToken && (
           <button className="icon-btn danger cal-disconnect-btn" onClick={handleDisconnect}>
             接続を切断
           </button>
