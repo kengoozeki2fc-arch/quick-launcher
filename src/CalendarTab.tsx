@@ -51,8 +51,13 @@ interface CalendarEvent {
 
 const JST = "Asia/Tokyo";
 
+// Graph API の dateTime は UTC だが 'Z' サフィックスなしで返るため付与して正しくパースする
+function toUtcDate(iso: string): Date {
+  return new Date(iso.endsWith("Z") ? iso : iso + "Z");
+}
+
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("ja-JP", {
+  return toUtcDate(iso).toLocaleTimeString("ja-JP", {
     timeZone: JST,
     hour: "2-digit",
     minute: "2-digit",
@@ -166,8 +171,8 @@ export default function CalendarTab() {
       tomorrowDate.setDate(tomorrowDate.getDate() + 1);
       const tomorrowStr = formatDateLabel(tomorrowDate);
 
-      setTodayEvents(events.filter((e) => formatDateLabel(new Date(e.start.dateTime)) === todayStr));
-      setTomorrowEvents(events.filter((e) => formatDateLabel(new Date(e.start.dateTime)) === tomorrowStr));
+      setTodayEvents(events.filter((e) => formatDateLabel(toUtcDate(e.start.dateTime)) === todayStr));
+      setTomorrowEvents(events.filter((e) => formatDateLabel(toUtcDate(e.start.dateTime)) === tomorrowStr));
     } catch (err) {
       setCalError(`カレンダーの取得に失敗しました: ${err}`);
     } finally {
