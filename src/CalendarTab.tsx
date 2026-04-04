@@ -202,18 +202,36 @@ export default function CalendarTab() {
         return;
       }
 
+      const dc = data.device_code as string;
       setDeviceCode({
         userCode: data.user_code as string,
         verificationUri: data.verification_uri as string,
-        deviceCode: data.device_code as string,
+        deviceCode: dc,
       });
-      pollForToken(tenantId, clientId, data.device_code as string, (data.interval as number) ?? 5);
+      setManualDc({ tid: tenantId, cid: clientId, dc });
+      pollForToken(tenantId, clientId, dc, (data.interval as number) ?? 5);
     } catch (err) {
       setAuthError(`接続に失敗しました: ${err}`);
     }
   };
 
-  const pollForToken = (tid: string, cid: string, dc: string, interval: number) => {
+  const applyToken = useCallback(async (tid: string, cid: string, data: Record<string, unknown>) => {
+    const newSettings: CalendarSettings = {
+      tenantId: tid,
+      clientId: cid,
+      accessToken: data.access_token as string,
+      refreshToken: (data.refresh_token as string) ?? "",
+      tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
+    };
+    setSettings(newSettings);
+    setShowSettings(false);
+    setPolling(false);
+    setDeviceCode(null);
+    setAuthError(null);
+    saveCalSettings(newSettings).catch(() => {});
+  }, []);
+
+  const pollForToken = useCallback((tid: string, cid: string, dc: string, interval: number) => {
     setPolling(true);
     const poll = setInterval(async () => {
       try {
@@ -225,22 +243,9 @@ export default function CalendarTab() {
             device_code: dc,
           }
         );
-
         if (data.access_token) {
           clearInterval(poll);
-          const newSettings: CalendarSettings = {
-            tenantId: tid,
-            clientId: cid,
-            accessToken: data.access_token as string,
-            refreshToken: (data.refresh_token as string) ?? "",
-            tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
-          };
-          // UIを先に更新してから保存
-          setSettings(newSettings);
-          setShowSettings(false);
-          setPolling(false);
-          setDeviceCode(null);
-          saveCalSettings(newSettings).catch(() => {}); // 非同期保存
+          await applyToken(tid, cid, data);
         } else if (data.error === "expired_token" || data.error === "code_already_used") {
           clearInterval(poll);
           setPolling(false);
@@ -251,6 +256,30 @@ export default function CalendarTab() {
         // 一時的なエラーは無視
       }
     }, interval * 1000);
+  }, [applyToken]);
+
+  // 手動で認証完了を確認するボタン用
+  const [manualDc, setManualDc] = useState<{tid: string; cid: string; dc: string} | null>(null);
+
+  const checkTokenManually = async () => {
+    if (!manualDc) return;
+    try {
+      const data = await msPost(
+        `https://login.microsoftonline.com/${manualDc.tid}/oauth2/v2.0/token`,
+        {
+          client_id: manualDc.cid,
+          grant_type: "urn:ietf:params:oauth2:grant-type:device_code",
+          device_code: manualDc.dc,
+        }
+      );
+      if (data.access_token) {
+        await applyToken(manualDc.tid, manualDc.cid, data);
+      } else {
+        setAuthError(`未完了: ${data.error ?? "再度ブラウザで認証してください"}`);
+      }
+    } catch (err) {
+      setAuthError(`確認失敗: ${err}`);
+    }
   };
 
   const handleDisconnect = async () => {
@@ -340,11 +369,20 @@ export default function CalendarTab() {
             {polling && <p className="device-code-waiting">✓ 認証を待機中...</p>}
             <button
               type="button"
-              className="icon-btn"
+              className="btn-save"
               style={{ marginTop: 10, width: "100%" }}
+              onClick={checkTokenManually}
+            >
+              ✅ ブラウザで認証しました
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ marginTop: 6, width: "100%" }}
               onClick={() => {
                 setDeviceCode(null);
                 setPolling(false);
+                setManualDc(null);
                 setTimeout(() => startDeviceCodeFlow(), 100);
               }}
             >
