@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "quick-launcher",
+  "productName": "work-launcher",
   "version": "0.1.0",
   "identifier": "com.cloudpower.quick-launcher",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Quick Launcher",
+        "title": "Work Launcher",
         "width": 500,
         "height": 900,
         "resizable": true,

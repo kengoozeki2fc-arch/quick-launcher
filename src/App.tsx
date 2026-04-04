@@ -6,13 +6,14 @@ import ItemCard from "./ItemCard";
 import EditModal from "./EditModal";
 import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
+import CalendarTab from "./CalendarTab";
 
 const DATA_FILE = "quick-launcher-data.json";
 const MEMO_FILE = "quick-launcher-memos.json";
 const TASK_FILE = "quick-launcher-tasks.json";
 const PAGE_SIZE = 5;
 
-type Tab = "launcher" | "memo" | "task";
+type Tab = "launcher" | "memo" | "task" | "calendar";
 
 async function loadJson<T>(file: string): Promise<T[]> {
   try {
@@ -213,7 +214,7 @@ export default function App() {
       )}
 
       <div className="header">
-        <h1>Quick Launcher</h1>
+        <h1>Work Launcher</h1>
         {tab === "launcher" && (
           <button className="add-btn" onClick={handleAdd}>+ 追加</button>
         )}
@@ -254,6 +255,12 @@ export default function App() {
           {tasks.filter((t) => !t.done).length > 0 && (
             <span className="tab-badge">{tasks.filter((t) => !t.done).length}</span>
           )}
+        </button>
+        <button
+          className={`tab-btn ${tab === "calendar" ? "active" : ""}`}
+          onClick={() => setTab("calendar")}
+        >
+          📅 カレンダー
         </button>
       </div>
 
@@ -309,6 +316,8 @@ export default function App() {
           onDelete={handleTaskDelete}
         />
       )}
+
+      {tab === "calendar" && <CalendarTab />}
 
       {showModal && (
         <EditModal

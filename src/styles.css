@@ -610,3 +610,172 @@ body {
   color: #e65100;
 }
 
+/* Calendar */
+.cal-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.cal-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #c2185b;
+}
+
+.cal-info-box {
+  background: #fff0f3;
+  border: 1px solid #f8bbd0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #4a2c2a;
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+
+.cal-info-box ol {
+  padding-left: 16px;
+  margin-top: 6px;
+}
+
+.cal-info-box code {
+  background: #fce4ec;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.cal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cal-connect-btn {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.cal-disconnect-btn {
+  margin-top: 16px;
+  width: 100%;
+}
+
+.cal-error {
+  background: #fde8e8;
+  color: #c0392b;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.device-code-box {
+  background: #fff0f3;
+  border: 1px solid #f8bbd0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #4a2c2a;
+}
+
+.device-code-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #c2185b;
+}
+
+.device-code-box ol {
+  padding-left: 16px;
+  line-height: 2;
+}
+
+.device-code-link {
+  color: #e91e63;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.device-code-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #c2185b;
+  text-align: center;
+  padding: 10px;
+  background: #fce4ec;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.device-code-waiting {
+  text-align: center;
+  color: #9e6070;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.cal-connected-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #c2185b;
+}
+
+.cal-section {
+  margin-bottom: 16px;
+}
+
+.cal-day-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9e6070;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #f8bbd0;
+}
+
+.cal-empty {
+  font-size: 13px;
+  color: #9e6070;
+  padding: 8px 0;
+}
+
+.cal-event-card {
+  background: #fff0f3;
+  border: 1px solid #f8bbd0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+
+.cal-event-time {
+  font-size: 12px;
+  color: #e91e63;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.cal-event-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a2c2a;
+}
+
+.cal-event-location {
+  font-size: 11px;
+  color: #9e6070;
+  margin-top: 3px;
+}
+
