@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { invoke } from "@tauri-apps/api/core";
 
-// Tauri環境ではネイティブfetch、ブラウザ開発時は標準fetch
-const httpFetch: typeof fetch = (typeof window !== "undefined" && (window as any).__TAURI__)
-  ? (tauriFetch as unknown as typeof fetch)
-  : fetch;
+async function msPost(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+  const raw = await invoke<string>("http_post", { url, params });
+  return JSON.parse(raw);
+}
+
+async function msGet(url: string, accessToken: string): Promise<Record<string, unknown>> {
+  const raw = await invoke<string>("http_get", { url, accessToken });
+  return JSON.parse(raw);
+}
 
 interface CalendarSettings {
   tenantId: string;
   clientId: string;
   accessToken: string;
   refreshToken: string;
-  tokenExpiry: number; // unix ms
+  tokenExpiry: number;
 }
 
 interface CalendarEvent {
@@ -21,7 +26,6 @@ interface CalendarEvent {
   end: { dateTime: string; timeZone: string };
   isAllDay: boolean;
   location?: { displayName: string };
-  bodyPreview?: string;
 }
 
 const SETTINGS_KEY = "wl_calendar_settings";
@@ -55,17 +59,14 @@ export default function CalendarTab() {
   const [clientId, setClientId] = useState(loadSettings()?.clientId ?? "");
   const [showSettings, setShowSettings] = useState(!loadSettings()?.accessToken);
 
-  // Device Code Flow state
   const [deviceCode, setDeviceCode] = useState<{
     userCode: string;
     verificationUri: string;
     deviceCode: string;
-    expiresIn: number;
   } | null>(null);
   const [polling, setPolling] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Calendar events
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [tomorrowEvents, setTomorrowEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,26 +76,21 @@ export default function CalendarTab() {
 
   const refreshAccessToken = useCallback(async (s: CalendarSettings): Promise<CalendarSettings | null> => {
     try {
-      const res = await httpFetch(
+      const data = await msPost(
         `https://login.microsoftonline.com/${s.tenantId}/oauth2/v2.0/token`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: s.clientId,
-            grant_type: "refresh_token",
-            refresh_token: s.refreshToken,
-            scope: GRAPH_SCOPE,
-          }),
+          client_id: s.clientId,
+          grant_type: "refresh_token",
+          refresh_token: s.refreshToken,
+          scope: GRAPH_SCOPE,
         }
       );
-      const data = await res.json();
       if (data.access_token) {
-        const updated = {
+        const updated: CalendarSettings = {
           ...s,
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token ?? s.refreshToken,
-          tokenExpiry: Date.now() + data.expires_in * 1000,
+          accessToken: data.access_token as string,
+          refreshToken: (data.refresh_token as string) ?? s.refreshToken,
+          tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
         };
         saveSettings(updated);
         setSettings(updated);
@@ -110,8 +106,7 @@ export default function CalendarTab() {
     setLoading(true);
     setCalError(null);
 
-    let currentSettings = s;
-    // Refresh token if expired (with 5min buffer)
+    let cur = s;
     if (Date.now() > s.tokenExpiry - 5 * 60 * 1000) {
       const refreshed = await refreshAccessToken(s);
       if (!refreshed) {
@@ -119,7 +114,7 @@ export default function CalendarTab() {
         setLoading(false);
         return;
       }
-      currentSettings = refreshed;
+      cur = refreshed;
     }
 
     const today = new Date();
@@ -128,50 +123,32 @@ export default function CalendarTab() {
     afterTomorrow.setDate(afterTomorrow.getDate() + 2);
 
     try {
-      const res = await httpFetch(
-        `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location,bodyPreview&$orderby=start/dateTime&$top=50`,
-        {
-          headers: {
-            Authorization: `Bearer ${currentSettings.accessToken}`,
-            "Content-Type": "application/json",
-          },
-        }
+      const data = await msGet(
+        `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location&$orderby=start/dateTime&$top=50`,
+        cur.accessToken
       );
 
-      if (!res.ok) {
-        setCalError(`取得エラー: ${res.status}`);
+      if (data.error) {
+        setCalError(`取得エラー: ${(data.error as Record<string, unknown>).message ?? JSON.stringify(data.error)}`);
         setLoading(false);
         return;
       }
 
-      const data = await res.json();
-      const events: CalendarEvent[] = data.value ?? [];
-
+      const events = (data.value as CalendarEvent[]) ?? [];
       const todayStr = formatDateLabel(today);
       const tomorrowDate = new Date(today);
       tomorrowDate.setDate(tomorrowDate.getDate() + 1);
       const tomorrowStr = formatDateLabel(tomorrowDate);
 
-      setTodayEvents(
-        events.filter((e) => {
-          const d = new Date(e.start.dateTime);
-          return formatDateLabel(d) === todayStr;
-        })
-      );
-      setTomorrowEvents(
-        events.filter((e) => {
-          const d = new Date(e.start.dateTime);
-          return formatDateLabel(d) === tomorrowStr;
-        })
-      );
+      setTodayEvents(events.filter((e) => formatDateLabel(new Date(e.start.dateTime)) === todayStr));
+      setTomorrowEvents(events.filter((e) => formatDateLabel(new Date(e.start.dateTime)) === tomorrowStr));
     } catch (err) {
-      setCalError("カレンダーの取得に失敗しました");
+      setCalError(`カレンダーの取得に失敗しました: ${err}`);
     } finally {
       setLoading(false);
     }
   }, [refreshAccessToken]);
 
-  // 認証済みなら自動取得
   useEffect(() => {
     if (settings?.accessToken && !showSettings) {
       fetchEvents(settings);
@@ -184,31 +161,24 @@ export default function CalendarTab() {
     setDeviceCode(null);
 
     try {
-      const res = await httpFetch(
+      const data = await msPost(
         `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: clientId,
-            scope: GRAPH_SCOPE,
-          }),
-        }
+        { client_id: clientId, scope: GRAPH_SCOPE }
       );
-      const data = await res.json();
+
       if (data.error) {
-        setAuthError(data.error_description ?? data.error);
+        setAuthError((data.error_description as string) ?? (data.error as string));
         return;
       }
+
       setDeviceCode({
-        userCode: data.user_code,
-        verificationUri: data.verification_uri,
-        deviceCode: data.device_code,
-        expiresIn: data.expires_in,
+        userCode: data.user_code as string,
+        verificationUri: data.verification_uri as string,
+        deviceCode: data.device_code as string,
       });
-      pollForToken(tenantId, clientId, data.device_code, data.interval ?? 5);
-    } catch {
-      setAuthError("接続に失敗しました。Tenant IDとClient IDを確認してください。");
+      pollForToken(tenantId, clientId, data.device_code as string, (data.interval as number) ?? 5);
+    } catch (err) {
+      setAuthError(`接続に失敗しました: ${err}`);
     }
   };
 
@@ -216,19 +186,15 @@ export default function CalendarTab() {
     setPolling(true);
     const poll = setInterval(async () => {
       try {
-        const res = await httpFetch(
+        const data = await msPost(
           `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              client_id: cid,
-              grant_type: "urn:ietf:params:oauth2:grant-type:device_code",
-              device_code: dc,
-            }),
+            client_id: cid,
+            grant_type: "urn:ietf:params:oauth2:grant-type:device_code",
+            device_code: dc,
           }
         );
-        const data = await res.json();
+
         if (data.access_token) {
           clearInterval(poll);
           setPolling(false);
@@ -236,9 +202,9 @@ export default function CalendarTab() {
           const newSettings: CalendarSettings = {
             tenantId: tid,
             clientId: cid,
-            accessToken: data.access_token,
-            refreshToken: data.refresh_token ?? "",
-            tokenExpiry: Date.now() + data.expires_in * 1000,
+            accessToken: data.access_token as string,
+            refreshToken: (data.refresh_token as string) ?? "",
+            tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
           };
           saveSettings(newSettings);
           setSettings(newSettings);
@@ -249,7 +215,6 @@ export default function CalendarTab() {
           setDeviceCode(null);
           setAuthError("コードが期限切れです。もう一度試してください。");
         }
-        // authorization_pending は継続
       } catch {
         // 一時的なエラーは無視
       }
@@ -266,18 +231,10 @@ export default function CalendarTab() {
     setPolling(false);
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    setDeviceCode(null);
-    setPolling(false);
-    setAuthError(null);
-  };
-
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // 設定・接続画面
   if (showSettings) {
     return (
       <div className="tab-content">
@@ -292,13 +249,12 @@ export default function CalendarTab() {
           <p><strong>事前準備:</strong> Azure Portal でアプリ登録が必要です。</p>
           <ol>
             <li>Azure Portal → Microsoft Entra ID → アプリの登録</li>
-            <li>「モバイルアプリとデスクトップアプリ」のリダイレクトURIを有効化</li>
+            <li>認証 → パブリック クライアント フローを有効化</li>
             <li>APIのアクセス許可: <code>Calendars.Read</code>（委任）</li>
-            <li>認証 → 「パブリック クライアント フロー」を「はい」に設定</li>
           </ol>
         </div>
 
-        <form onSubmit={handleSaveSettings} className="cal-form">
+        <form onSubmit={(e) => e.preventDefault()} className="cal-form">
           <div className="form-group">
             <label>テナントID（Directory ID）</label>
             <input
@@ -337,12 +293,7 @@ export default function CalendarTab() {
             <p className="device-code-title">以下の手順で認証してください</p>
             <ol>
               <li>
-                <a
-                  href={deviceCode.verificationUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="device-code-link"
-                >
+                <a href={deviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-link">
                   {deviceCode.verificationUri}
                 </a>
                 を開く
@@ -363,7 +314,6 @@ export default function CalendarTab() {
     );
   }
 
-  // カレンダー表示
   return (
     <div className="tab-content">
       <div className="cal-header">
