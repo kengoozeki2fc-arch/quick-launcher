@@ -49,13 +49,24 @@ interface CalendarEvent {
   location?: { displayName: string };
 }
 
+const JST = "Asia/Tokyo";
+
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return new Date(iso).toLocaleTimeString("ja-JP", {
+    timeZone: JST,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatDateLabel(d: Date): string {
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+  return d.toLocaleDateString("ja-JP", {
+    timeZone: JST,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).replace(/\//g, "/");
 }
 
 export default function CalendarTab() {
