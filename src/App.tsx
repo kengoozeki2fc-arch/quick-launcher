@@ -1,34 +1,51 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { open } from "@tauri-apps/plugin-shell";
+import { readTextFile, writeTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 import type { LauncherItem } from "./types";
 import ItemCard from "./ItemCard";
 import EditModal from "./EditModal";
 
-const STORAGE_KEY = "quick-launcher-items";
-const PAGE_SIZE = 25;
+const DATA_FILE = "quick-launcher-data.json";
+const PAGE_SIZE = 5;
 
-function loadItems(): LauncherItem[] {
+async function loadItemsFromFile(): Promise<LauncherItem[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const fileExists = await exists(DATA_FILE, { baseDir: BaseDirectory.Desktop });
+    if (!fileExists) return [];
+    const raw = await readTextFile(DATA_FILE, { baseDir: BaseDirectory.Desktop });
+    return JSON.parse(raw);
   } catch {
     return [];
   }
 }
 
-function saveItems(items: LauncherItem[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+async function saveItemsToFile(items: LauncherItem[]) {
+  await writeTextFile(DATA_FILE, JSON.stringify(items, null, 2), {
+    baseDir: BaseDirectory.Desktop,
+  });
 }
 
 export default function App() {
-  const [items, setItems] = useState<LauncherItem[]>(loadItems);
+  const [items, setItems] = useState<LauncherItem[]>([]);
   const [editingItem, setEditingItem] = useState<LauncherItem | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const loaded = useRef(false);
 
+  // 起動時にデスクトップのJSONを読み込み
   useEffect(() => {
-    saveItems(items);
+    loadItemsFromFile().then((data) => {
+      setItems(data);
+      loaded.current = true;
+    });
+  }, []);
+
+  // データ変更時にデスクトップに自動保存
+  useEffect(() => {
+    if (loaded.current) {
+      saveItemsToFile(items);
+    }
   }, [items]);
 
   // 検索でページをリセット

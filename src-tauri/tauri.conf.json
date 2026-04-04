@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Quick Launcher",
-        "width": 480,
-        "height": 600,
+        "width": 500,
+        "height": 900,
         "resizable": true,
         "fullscreen": false,
         "decorations": true
