@@ -302,6 +302,18 @@ export default function CalendarTab() {
             </ol>
             <div className="device-code-value">{deviceCode.userCode}</div>
             {polling && <p className="device-code-waiting">✓ 認証を待機中...</p>}
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ marginTop: 10, width: "100%" }}
+              onClick={() => {
+                setDeviceCode(null);
+                setPolling(false);
+                setTimeout(() => startDeviceCodeFlow(), 100);
+              }}
+            >
+              🔄 コードを再発行
+            </button>
           </div>
         )}
 
