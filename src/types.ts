@@ -24,3 +24,31 @@ export interface Task {
   notified: boolean;
   createdAt: string;
 }
+
+export interface CalendarSettings {
+  tenantId: string;
+  clientId: string;
+  accessToken: string;
+  refreshToken: string;
+  tokenExpiry: number;
+}
+
+export type ThemeName = "pink" | "blue" | "black" | "white";
+
+export interface AppData {
+  version: 1;
+  items: LauncherItem[];
+  memos: Memo[];
+  tasks: Task[];
+  calendar: CalendarSettings | null;
+  theme: ThemeName;
+}
+
+export const DEFAULT_APP_DATA: AppData = {
+  version: 1,
+  items: [],
+  memos: [],
+  tasks: [],
+  calendar: null,
+  theme: "pink",
+};

@@ -4,6 +4,42 @@ use sha2::{Sha256, Digest};
 use rand::RngCore;
 
 #[tauri::command]
+fn read_file_abs(path: String) -> Result<String, String> {
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn write_file_abs(path: String, content: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn default_data_path() -> Result<String, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| e.to_string())?;
+    let p = std::path::Path::new(&home).join("Desktop").join("work-launcher.json");
+    Ok(p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn desktop_path() -> Result<String, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| e.to_string())?;
+    Ok(std::path::Path::new(&home).join("Desktop").to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn http_post(url: String, params: HashMap<String, String>) -> Result<String, String> {
     let client = reqwest::Client::new();
     let res = client
@@ -133,7 +169,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![http_post, http_get, start_oauth_flow])
+        .invoke_handler(tauri::generate_handler![
+            http_post,
+            http_get,
+            start_oauth_flow,
+            read_file_abs,
+            write_file_abs,
+            default_data_path,
+            desktop_path
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
