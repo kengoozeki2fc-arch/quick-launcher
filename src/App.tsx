@@ -22,7 +22,7 @@ type Tab = "calendar" | "task" | "launcher" | "memo";
 
 const THEMES: { name: ThemeName; label: string; emoji: string }[] = [
   { name: "pink", label: "ピンク", emoji: "🌸" },
-  { name: "blue", label: "ブルー", emoji: "💙" },
+  { name: "blue", label: "空色", emoji: "🌤" },
   { name: "black", label: "ブラック", emoji: "🖤" },
   { name: "white", label: "ホワイト", emoji: "🤍" },
 ];
