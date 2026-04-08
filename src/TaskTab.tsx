@@ -74,8 +74,14 @@ export default function TaskTab({ tasks, onSave, onToggleDone, onDelete }: Props
     return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
+  const todayStr = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  })();
+
   const activeTasks = tasks.filter((t) => !t.done);
-  const doneTasks = tasks.filter((t) => t.done);
+  // 完了タスクは期限日が今日以降のものだけ表示（翌日以降は自動非表示）
+  const doneTasks = tasks.filter((t) => t.done && t.date >= todayStr);
 
   const renderTask = (task: Task) => (
     <div
