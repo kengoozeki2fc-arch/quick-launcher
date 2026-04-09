@@ -143,7 +143,20 @@ export default function App() {
       const { data, migrated } = await loadAppData(path);
       setItems(data.items);
       setMemos(data.memos);
-      setTasks(data.tasks);
+      // 完了日が昨日以前のタスクは物理削除（翌日になったら自動で消える）
+      const n = new Date();
+      const todayStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+      const prunedTasks = data.tasks.filter((t) => {
+        if (!t.done) return true;
+        // 旧データ（completedAt なし）は今日完了したものとして扱う
+        if (!t.completedAt) return true;
+        return t.completedAt >= todayStr;
+      });
+      // 旧データに今日のcompletedAtを補完
+      const normalizedTasks = prunedTasks.map((t) =>
+        t.done && !t.completedAt ? { ...t, completedAt: todayStr } : t
+      );
+      setTasks(normalizedTasks);
       setCalendar(data.calendar);
       setTheme(data.theme ?? "pink");
       loaded.current = true;
@@ -351,7 +364,18 @@ export default function App() {
     });
   };
   const handleTaskToggle = (id: string) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const nextDone = !t.done;
+        if (nextDone) {
+          const n = new Date();
+          const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+          return { ...t, done: true, completedAt: today };
+        }
+        return { ...t, done: false, completedAt: undefined };
+      })
+    );
   const handleTaskDelete = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id));
 
   const handleCalendarChange = (s: CalendarSettings | null) => setCalendar(s);

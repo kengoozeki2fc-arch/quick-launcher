@@ -23,6 +23,7 @@ export interface Task {
   done: boolean;
   notified: boolean;
   createdAt: string;
+  completedAt?: string; // YYYY-MM-DD（完了日）
 }
 
 export interface CalendarSettings {
