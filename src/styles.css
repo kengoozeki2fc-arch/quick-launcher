@@ -428,6 +428,29 @@ body {
   font-size: 14px;
 }
 
+/* Update Banner */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #2196f3, #1565c0);
+  color: #fff;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 210;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.update-banner:hover {
+  background: linear-gradient(135deg, #1e88e5, #0d47a1);
+}
+
 /* Notification Banner */
 .notification-banner {
   position: fixed;

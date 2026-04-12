@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings } from "./types";
 import { DEFAULT_APP_DATA } from "./types";
@@ -10,6 +12,9 @@ import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
 import CalendarTab, { toUtcDate, formatDateLabel, formatTime } from "./CalendarTab";
 import type { CalendarEvent } from "./CalendarTab";
+
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/kengoozeki2fc-arch/quick-launcher/releases/latest";
+const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000; // 1時間
 
 const PAGE_SIZE = 5;
 const PATH_KEY = "wl_data_path";
@@ -125,6 +130,11 @@ export default function App() {
   const [tomorrowEvents, setTomorrowEvents] = useState<CalendarEvent[]>([]);
   const [calLoading, setCalLoading] = useState(false);
   const [calError, setCalError] = useState<string | null>(null);
+
+  // バージョン監視
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string>("");
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   const loaded = useRef(false);
 
@@ -292,6 +302,48 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendar?.accessToken, calendar?.tenantId, calendar?.clientId]);
 
+  // GitHubバージョンチェック
+  const checkForUpdate = useCallback(async () => {
+    try {
+      const raw = await invoke<string>("http_get_public", { url: GITHUB_RELEASES_URL });
+      const data = JSON.parse(raw);
+      const tag = (data.tag_name as string)?.replace(/^v/, "");
+      if (tag) setLatestVersion(tag);
+    } catch {
+      // ネットワークエラーは無視
+    }
+  }, []);
+
+  // 起動時: バージョン取得＆チェック
+  useEffect(() => {
+    (async () => {
+      try {
+        const ver = await getVersion();
+        setCurrentVersion(ver);
+      } catch {
+        // fallback
+      }
+    })();
+    checkForUpdate();
+  }, [checkForUpdate]);
+
+  // 1時間ごと自動更新（カレンダー＋バージョンチェック）
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (calendar?.accessToken) {
+        fetchEvents(calendar);
+      }
+      checkForUpdate();
+    }, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(id);
+  }, [calendar, fetchEvents, checkForUpdate]);
+
+  // 更新通知判定
+  const hasUpdate = useMemo(() => {
+    if (!currentVersion || !latestVersion || updateDismissed) return false;
+    return latestVersion !== currentVersion;
+  }, [currentVersion, latestVersion, updateDismissed]);
+
   // Launcher
   const filtered = useMemo(() => {
     if (!search.trim()) return items;
@@ -380,12 +432,27 @@ export default function App() {
 
   const handleCalendarChange = (s: CalendarSettings | null) => setCalendar(s);
 
+  // ウィンドウ最小化
+  const handleMinimize = useCallback(async () => {
+    try {
+      await getCurrentWindow().minimize();
+    } catch (e) {
+      console.error("minimize failed", e);
+    }
+  }, []);
+
   // ---------- コンパクト表示 ----------
   if (compact) {
-    const upcomingEvents = todayEvents.slice(0, 2);
+    const upcomingEvents = todayEvents.slice(0, 3);
     const upcomingTasks = tasks.filter((t) => !t.done).slice(0, 3);
     return (
       <div className="app compact" data-theme={theme}>
+        {hasUpdate && (
+          <div className="update-banner" onClick={() => open(`https://github.com/kengoozeki2fc-arch/quick-launcher/releases/tag/v${latestVersion}`)}>
+            新しいバージョン v{latestVersion} が利用可能です（現在 v{currentVersion}）
+            <span className="notif-close" onClick={(e) => { e.stopPropagation(); setUpdateDismissed(true); }}>✕</span>
+          </div>
+        )}
         {notification && (
           <div className="notification-banner" onClick={() => setNotification(null)}>
             {notification}
@@ -394,11 +461,14 @@ export default function App() {
         )}
         <div className="compact-header">
           <h1>Work Launcher</h1>
-          <button
-            className="icon-btn"
-            onClick={() => setShowSettingsModal(true)}
-            title="設定"
-          >⚙</button>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button className="icon-btn" onClick={handleMinimize} title="最小化">−</button>
+            <button
+              className="icon-btn"
+              onClick={() => setShowSettingsModal(true)}
+              title="設定"
+            >⚙</button>
+          </div>
         </div>
 
         <div className="compact-section">
@@ -455,6 +525,12 @@ export default function App() {
   // ---------- 通常表示 ----------
   return (
     <div className="app" data-theme={theme}>
+      {hasUpdate && (
+        <div className="update-banner" onClick={() => open(`https://github.com/kengoozeki2fc-arch/quick-launcher/releases/tag/v${latestVersion}`)}>
+          新しいバージョン v{latestVersion} が利用可能です（現在 v{currentVersion}）
+          <span className="notif-close" onClick={(e) => { e.stopPropagation(); setUpdateDismissed(true); }}>✕</span>
+        </div>
+      )}
       {notification && (
         <div className="notification-banner" onClick={() => setNotification(null)}>
           {notification}
@@ -468,6 +544,7 @@ export default function App() {
           {tab === "launcher" && (
             <button className="add-btn" onClick={handleAdd}>+ 追加</button>
           )}
+          <button className="icon-btn" onClick={handleMinimize} title="最小化">−</button>
           <button className="icon-btn" onClick={() => setShowSettingsModal(true)} title="設定">⚙</button>
         </div>
       </div>

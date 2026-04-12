@@ -66,6 +66,18 @@ async fn http_get(url: String, access_token: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn http_get_public(url: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .get(&url)
+        .header("User-Agent", "work-launcher")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.text().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn start_oauth_flow(
     app: tauri::AppHandle,
     tenant_id: String,
@@ -172,6 +184,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             http_post,
             http_get,
+            http_get_public,
             start_oauth_flow,
             read_file_abs,
             write_file_abs,
