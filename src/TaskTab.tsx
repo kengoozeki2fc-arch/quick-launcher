@@ -74,7 +74,11 @@ export default function TaskTab({ tasks, onSave, onToggleDone, onDelete }: Props
     return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
-  const activeTasks = tasks.filter((t) => !t.done);
+  // 期限昇順で並べる: 超過（過去）→ 本日に近い → 遠い未来
+  const activeTasks = tasks
+    .filter((t) => !t.done)
+    .slice()
+    .sort((a, b) => getDeadline(a).getTime() - getDeadline(b).getTime());
   // 完了タスクの翌日自動削除はApp.tsxの起動時プルーンで実施。ここでは全て表示。
   const doneTasks = tasks.filter((t) => t.done);
 

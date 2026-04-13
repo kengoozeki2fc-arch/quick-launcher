@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings } from "./types";
 import { DEFAULT_APP_DATA } from "./types";
@@ -441,6 +441,24 @@ export default function App() {
     }
   }, []);
 
+  // ウィンドウ最大化トグル（コンパクト ↔ 最大サイズ）
+  const handleToggleMaximize = useCallback(async () => {
+    try {
+      const win = getCurrentWindow();
+      const size = await win.innerSize();
+      const scale = await win.scaleFactor();
+      const widthLogical = size.width / scale;
+      // 500弱ならコンパクト状態 → 最大サイズへ、そうでなければコンパクトへ戻す
+      if (widthLogical < 520) {
+        await win.setSize(new LogicalSize(540, 800));
+      } else {
+        await win.setSize(new LogicalSize(500, 520));
+      }
+    } catch (e) {
+      console.error("toggle maximize failed", e);
+    }
+  }, []);
+
   // ---------- コンパクト表示 ----------
   if (compact) {
     const upcomingEvents = todayEvents.slice(0, 3);
@@ -462,7 +480,8 @@ export default function App() {
         <div className="compact-header">
           <h1>Work Launcher</h1>
           <div style={{ display: "flex", gap: 4 }}>
-            <button className="icon-btn" onClick={handleMinimize} title="最小化">−</button>
+            <button className="icon-btn icon-btn-slim" onClick={handleMinimize} title="最小化">−</button>
+            <button className="icon-btn icon-btn-slim" onClick={handleToggleMaximize} title="最大化">□</button>
             <button
               className="icon-btn"
               onClick={() => setShowSettingsModal(true)}
@@ -544,7 +563,8 @@ export default function App() {
           {tab === "launcher" && (
             <button className="add-btn" onClick={handleAdd}>+ 追加</button>
           )}
-          <button className="icon-btn" onClick={handleMinimize} title="最小化">−</button>
+          <button className="icon-btn icon-btn-slim" onClick={handleMinimize} title="最小化">−</button>
+          <button className="icon-btn icon-btn-slim" onClick={handleToggleMaximize} title="最大化">□</button>
           <button className="icon-btn" onClick={() => setShowSettingsModal(true)} title="設定">⚙</button>
         </div>
       </div>

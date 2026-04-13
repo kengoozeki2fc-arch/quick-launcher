@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import type { CalendarSettings } from "./types";
 
 interface CalendarEvent {
@@ -184,6 +185,30 @@ export default function CalendarTab({
   );
 }
 
+// 文字列内のURLを<a>に分解（前後のテキストも保持）
+function renderLocationWithLinks(text: string) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, i) => {
+    if (urlRegex.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          className="cal-event-link"
+          onClick={(e) => {
+            e.preventDefault();
+            shellOpen(part).catch(() => window.open(part, "_blank"));
+          }}
+        >
+          {part}
+        </a>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 function EventCard({ event }: { event: CalendarEvent }) {
   const timeStr = event.isAllDay
     ? "終日"
@@ -194,7 +219,7 @@ function EventCard({ event }: { event: CalendarEvent }) {
       <div className="cal-event-time">{timeStr}</div>
       <div className="cal-event-title">{event.subject}</div>
       {event.location?.displayName && (
-        <div className="cal-event-location">📍 {event.location.displayName}</div>
+        <div className="cal-event-location">📍 {renderLocationWithLinks(event.location.displayName)}</div>
       )}
     </div>
   );

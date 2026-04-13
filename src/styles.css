@@ -179,6 +179,13 @@ body {
   color: #e74c3c;
 }
 
+.icon-btn.icon-btn-slim {
+  padding: 4px 5px;
+  min-width: 22px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .item-row {
   display: flex;
   align-items: center;
@@ -868,6 +875,17 @@ body {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 3px;
+  word-break: break-all;
+}
+
+.cal-event-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cal-event-link:hover {
+  color: var(--accent-strong);
 }
 
 /* テーマ選択ボタン */
