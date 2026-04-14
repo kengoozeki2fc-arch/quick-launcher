@@ -442,17 +442,15 @@ export default function App() {
   }, []);
 
   // ウィンドウ最大化トグル（コンパクト ↔ 最大サイズ）
+  // compact判定は window.innerHeight < 560 なので、境界を跨ぐサイズへ確実に切り替える
   const handleToggleMaximize = useCallback(async () => {
     try {
       const win = getCurrentWindow();
-      const size = await win.innerSize();
-      const scale = await win.scaleFactor();
-      const widthLogical = size.width / scale;
-      // 500弱ならコンパクト状態 → 最大サイズへ、そうでなければコンパクトへ戻す
-      if (widthLogical < 520) {
+      const isCompactNow = window.innerWidth < 420 || window.innerHeight < 560;
+      if (isCompactNow) {
         await win.setSize(new LogicalSize(540, 800));
       } else {
-        await win.setSize(new LogicalSize(500, 520));
+        await win.setSize(new LogicalSize(400, 520));
       }
     } catch (e) {
       console.error("toggle maximize failed", e);
@@ -461,7 +459,10 @@ export default function App() {
 
   // ---------- コンパクト表示 ----------
   if (compact) {
-    const upcomingEvents = todayEvents.slice(0, 3);
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    const upcomingEvents = todayEvents
+      .filter((ev) => ev.isAllDay || toUtcDate(ev.end.dateTime).getTime() >= cutoff)
+      .slice(0, 3);
     const upcomingTasks = tasks.filter((t) => !t.done).slice(0, 3);
     return (
       <div className="app compact" data-theme={theme}>
