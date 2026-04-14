@@ -166,11 +166,17 @@ export default function CalendarTab({
 
       <div className="cal-section">
         <div className="cal-day-label">今日 {formatDateLabel(today)}</div>
-        {todayEvents.length === 0 ? (
-          <div className="cal-empty">予定なし</div>
-        ) : (
-          todayEvents.map((ev) => <EventCard key={ev.id} event={ev} />)
-        )}
+        {(() => {
+          const cutoff = Date.now() - 60 * 60 * 1000;
+          const visible = todayEvents.filter(
+            (ev) => ev.isAllDay || toUtcDate(ev.end.dateTime).getTime() >= cutoff,
+          );
+          return visible.length === 0 ? (
+            <div className="cal-empty">予定なし</div>
+          ) : (
+            visible.map((ev) => <EventCard key={ev.id} event={ev} />)
+          );
+        })()}
       </div>
 
       <div className="cal-section">
