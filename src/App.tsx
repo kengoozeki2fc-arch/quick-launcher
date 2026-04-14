@@ -432,28 +432,21 @@ export default function App() {
 
   const handleCalendarChange = (s: CalendarSettings | null) => setCalendar(s);
 
-  // ウィンドウ最小化
+  // 「−」コンパクト表示へ縮小
   const handleMinimize = useCallback(async () => {
     try {
-      await getCurrentWindow().minimize();
+      await getCurrentWindow().setSize(new LogicalSize(400, 520));
     } catch (e) {
-      console.error("minimize failed", e);
+      console.error("compact resize failed", e);
     }
   }, []);
 
-  // ウィンドウ最大化トグル（コンパクト ↔ 最大サイズ）
-  // compact判定は window.innerHeight < 560 なので、境界を跨ぐサイズへ確実に切り替える
+  // 「□」通常サイズへ拡大
   const handleToggleMaximize = useCallback(async () => {
     try {
-      const win = getCurrentWindow();
-      const isCompactNow = window.innerWidth < 420 || window.innerHeight < 560;
-      if (isCompactNow) {
-        await win.setSize(new LogicalSize(540, 800));
-      } else {
-        await win.setSize(new LogicalSize(400, 520));
-      }
+      await getCurrentWindow().setSize(new LogicalSize(540, 800));
     } catch (e) {
-      console.error("toggle maximize failed", e);
+      console.error("expand resize failed", e);
     }
   }, []);
 
