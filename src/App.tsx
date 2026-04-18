@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
-import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings } from "./types";
-import { DEFAULT_APP_DATA } from "./types";
+import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings, Preferences, TabName, StartupSize } from "./types";
+import { DEFAULT_APP_DATA, DEFAULT_PREFERENCES } from "./types";
 import ItemCard from "./ItemCard";
 import EditModal from "./EditModal";
 import MemoTab from "./MemoTab";
@@ -23,14 +23,27 @@ const LEGACY_MEMO = "quick-launcher-memos.json";
 const LEGACY_TASK = "quick-launcher-tasks.json";
 const LEGACY_CAL = "quick-launcher-calendar.json";
 
-type Tab = "calendar" | "task" | "launcher" | "memo";
-
 const THEMES: { name: ThemeName; label: string; emoji: string }[] = [
   { name: "pink", label: "ピンク", emoji: "🌸" },
   { name: "blue", label: "空色", emoji: "🌤" },
   { name: "black", label: "ブラック", emoji: "🖤" },
   { name: "white", label: "ホワイト", emoji: "🤍" },
 ];
+
+const TABS: { name: TabName; label: string }[] = [
+  { name: "calendar", label: "📅 カレンダー" },
+  { name: "task", label: "✅ タスク" },
+  { name: "launcher", label: "🚀 サイト" },
+  { name: "memo", label: "📝 メモ" },
+];
+
+const SIZES: { name: StartupSize; label: string; size: [number, number] }[] = [
+  { name: "compact", label: "コンパクト (400×520)", size: [400, 520] },
+  { name: "normal", label: "通常 (540×800)", size: [540, 800] },
+];
+
+const COMPACT_SIZE = [400, 520] as const;
+const NORMAL_SIZE = [540, 800] as const;
 
 async function loadAppData(path: string): Promise<{ data: AppData; migrated: boolean }> {
   // 既存ファイルを試す
@@ -39,7 +52,11 @@ async function loadAppData(path: string): Promise<{ data: AppData; migrated: boo
     if (raw && raw.trim().length > 0) {
       const parsed = JSON.parse(raw) as Partial<AppData>;
       return {
-        data: { ...DEFAULT_APP_DATA, ...parsed },
+        data: {
+          ...DEFAULT_APP_DATA,
+          ...parsed,
+          preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
+        },
         migrated: false,
       };
     }
@@ -109,7 +126,7 @@ function useCompactMode(): boolean {
 
 export default function App() {
   const [dataPath, setDataPath] = useState<string>("");
-  const [tab, setTab] = useState<Tab>("calendar");
+  const [tab, setTab] = useState<TabName>("calendar");
   const [notification, setNotification] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const compact = useCompactMode();
@@ -119,6 +136,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
   const [theme, setTheme] = useState<ThemeName>("pink");
+  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
 
   const [editingItem, setEditingItem] = useState<LauncherItem | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -169,6 +187,15 @@ export default function App() {
       setTasks(normalizedTasks);
       setCalendar(data.calendar);
       setTheme(data.theme ?? "pink");
+      const prefs = { ...DEFAULT_PREFERENCES, ...(data.preferences ?? {}) };
+      setPreferences(prefs);
+      setTab(prefs.startupTab);
+      try {
+        const [w, h] = prefs.startupSize === "compact" ? COMPACT_SIZE : NORMAL_SIZE;
+        await getCurrentWindow().setSize(new LogicalSize(w, h));
+      } catch (e) {
+        console.error("startup resize failed", e);
+      }
       loaded.current = true;
       if (migrated) {
         // 即保存して統合JSONを生成
@@ -190,9 +217,9 @@ export default function App() {
   // 自動保存
   useEffect(() => {
     if (!loaded.current || !dataPath) return;
-    const data: AppData = { version: 1, items, memos, tasks, calendar, theme };
+    const data: AppData = { version: 1, items, memos, tasks, calendar, theme, preferences };
     saveAppData(dataPath, data).catch((e) => console.error("save failed", e));
-  }, [items, memos, tasks, calendar, theme, dataPath]);
+  }, [items, memos, tasks, calendar, theme, preferences, dataPath]);
 
   // 検索でページリセット
   useEffect(() => {
@@ -435,7 +462,7 @@ export default function App() {
   // 「−」コンパクト表示へ縮小
   const handleMinimize = useCallback(async () => {
     try {
-      await getCurrentWindow().setSize(new LogicalSize(400, 520));
+      await getCurrentWindow().setSize(new LogicalSize(...COMPACT_SIZE));
     } catch (e) {
       console.error("compact resize failed", e);
     }
@@ -444,7 +471,7 @@ export default function App() {
   // 「□」通常サイズへ拡大
   const handleToggleMaximize = useCallback(async () => {
     try {
-      await getCurrentWindow().setSize(new LogicalSize(540, 800));
+      await getCurrentWindow().setSize(new LogicalSize(...NORMAL_SIZE));
     } catch (e) {
       console.error("expand resize failed", e);
     }
@@ -523,11 +550,13 @@ export default function App() {
           <SettingsModal
             dataPath={dataPath}
             theme={theme}
+            preferences={preferences}
             onPathChange={(p) => {
               setDataPath(p);
               localStorage.setItem(PATH_KEY, p);
             }}
             onThemeChange={setTheme}
+            onPreferencesChange={setPreferences}
             onClose={() => setShowSettingsModal(false)}
           />
         )}
@@ -684,11 +713,13 @@ export default function App() {
         <SettingsModal
           dataPath={dataPath}
           theme={theme}
+          preferences={preferences}
           onPathChange={(p) => {
             setDataPath(p);
             localStorage.setItem(PATH_KEY, p);
           }}
           onThemeChange={setTheme}
+          onPreferencesChange={setPreferences}
           onClose={() => setShowSettingsModal(false)}
         />
       )}
@@ -699,12 +730,14 @@ export default function App() {
 interface SettingsModalProps {
   dataPath: string;
   theme: ThemeName;
+  preferences: Preferences;
   onPathChange: (p: string) => void;
   onThemeChange: (t: ThemeName) => void;
+  onPreferencesChange: (p: Preferences) => void;
   onClose: () => void;
 }
 
-function SettingsModal({ dataPath, theme, onPathChange, onThemeChange, onClose }: SettingsModalProps) {
+function SettingsModal({ dataPath, theme, preferences, onPathChange, onThemeChange, onPreferencesChange, onClose }: SettingsModalProps) {
   const [path, setPath] = useState(dataPath);
   const [reloadStatus, setReloadStatus] = useState<string | null>(null);
 
@@ -739,6 +772,38 @@ function SettingsModal({ dataPath, theme, onPathChange, onThemeChange, onClose }
                 onClick={() => onThemeChange(t.name)}
               >
                 {t.emoji} {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>起動時のウィンドウサイズ</label>
+          <div className="theme-grid">
+            {SIZES.map((s) => (
+              <button
+                key={s.name}
+                type="button"
+                className={`theme-btn ${preferences.startupSize === s.name ? "active" : ""}`}
+                onClick={() => onPreferencesChange({ ...preferences, startupSize: s.name })}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>起動時に開くタブ</label>
+          <div className="theme-grid">
+            {TABS.map((t) => (
+              <button
+                key={t.name}
+                type="button"
+                className={`theme-btn ${preferences.startupTab === t.name ? "active" : ""}`}
+                onClick={() => onPreferencesChange({ ...preferences, startupTab: t.name })}
+              >
+                {t.label}
               </button>
             ))}
           </div>

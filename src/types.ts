@@ -36,6 +36,14 @@ export interface CalendarSettings {
 
 export type ThemeName = "pink" | "blue" | "black" | "white";
 
+export type TabName = "calendar" | "task" | "launcher" | "memo";
+export type StartupSize = "compact" | "normal";
+
+export interface Preferences {
+  startupSize: StartupSize;
+  startupTab: TabName;
+}
+
 export interface AppData {
   version: 1;
   items: LauncherItem[];
@@ -43,7 +51,13 @@ export interface AppData {
   tasks: Task[];
   calendar: CalendarSettings | null;
   theme: ThemeName;
+  preferences: Preferences;
 }
+
+export const DEFAULT_PREFERENCES: Preferences = {
+  startupSize: "normal",
+  startupTab: "calendar",
+};
 
 export const DEFAULT_APP_DATA: AppData = {
   version: 1,
@@ -52,4 +66,5 @@ export const DEFAULT_APP_DATA: AppData = {
   tasks: [],
   calendar: null,
   theme: "pink",
+  preferences: DEFAULT_PREFERENCES,
 };
