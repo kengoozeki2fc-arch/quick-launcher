@@ -7,6 +7,18 @@ export interface LauncherItem {
   otp: boolean;
 }
 
+export interface LocalLink {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface LocalSection {
+  id: string;
+  title: string;
+  links: LocalLink[];
+}
+
 export interface Memo {
   id: string;
   title: string;
@@ -36,12 +48,19 @@ export interface CalendarSettings {
 
 export type ThemeName = "pink" | "blue" | "black" | "white";
 
-export type TabName = "calendar" | "task" | "launcher" | "memo";
+export type TabName = "calendar" | "task" | "launcher" | "memo" | "local";
 export type StartupSize = "compact" | "normal";
 
 export interface Preferences {
   startupSize: StartupSize;
   startupTab: TabName;
+  showLocalTab: boolean;
+}
+
+export interface LocalImportSource {
+  htmlPath: string;
+  winBase: string;
+  macBase: string;
 }
 
 export interface AppData {
@@ -52,11 +71,14 @@ export interface AppData {
   calendar: CalendarSettings | null;
   theme: ThemeName;
   preferences: Preferences;
+  localSections: LocalSection[];
+  localImportSource?: LocalImportSource;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
   startupSize: "normal",
   startupTab: "calendar",
+  showLocalTab: true,
 };
 
 export const DEFAULT_APP_DATA: AppData = {
@@ -67,4 +89,6 @@ export const DEFAULT_APP_DATA: AppData = {
   calendar: null,
   theme: "pink",
   preferences: DEFAULT_PREFERENCES,
+  localSections: [],
+  localImportSource: undefined,
 };

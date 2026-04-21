@@ -1023,3 +1023,88 @@ body {
   flex-shrink: 0;
 }
 
+
+/* ---------- Local tab ---------- */
+.local-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.local-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.local-section {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.local-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.local-section-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.local-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.local-empty {
+  font-size: 11px;
+  color: #888;
+}
+
+.local-btn {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.local-btn-label {
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-btn-label:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.local-btn-del {
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 6px 8px;
+  color: #999;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.local-btn-del:hover {
+  background: rgba(255, 0, 0, 0.08);
+  color: #c00;
+}

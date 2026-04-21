@@ -32,6 +32,69 @@ fn default_data_path() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    // file:// URL もそのまま受け付ける（Macの`open`はfile://を解釈できる）
+    let target = if path.starts_with("file://") {
+        // URLデコードしてローカルパスに変換
+        let stripped = path.trim_start_matches("file://");
+        // Windowsの file:///C:/... 形式は先頭の / を外す
+        let cleaned = if stripped.starts_with('/') && stripped.len() >= 3 && stripped.chars().nth(2) == Some(':') {
+            stripped[1..].to_string()
+        } else {
+            stripped.to_string()
+        };
+        // パーセントデコード（日本語など）
+        percent_decode(&cleaned)
+    } else {
+        path.clone()
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &target])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("");
+            if let Ok(b) = u8::from_str_radix(hex, 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+#[tauri::command]
 fn desktop_path() -> Result<String, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -189,7 +252,8 @@ pub fn run() {
             read_file_abs,
             write_file_abs,
             default_data_path,
-            desktop_path
+            desktop_path,
+            open_path
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

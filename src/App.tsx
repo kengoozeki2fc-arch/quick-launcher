@@ -4,12 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
-import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings, Preferences, TabName, StartupSize } from "./types";
+import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings, Preferences, TabName, StartupSize, LocalSection, LocalImportSource } from "./types";
 import { DEFAULT_APP_DATA, DEFAULT_PREFERENCES } from "./types";
 import ItemCard from "./ItemCard";
 import EditModal from "./EditModal";
 import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
+import LocalTab from "./LocalTab";
 import CalendarTab, { toUtcDate, formatDateLabel, formatTime } from "./CalendarTab";
 import type { CalendarEvent } from "./CalendarTab";
 
@@ -35,6 +36,7 @@ const TABS: { name: TabName; label: string }[] = [
   { name: "task", label: "✅ タスク" },
   { name: "launcher", label: "🚀 サイト" },
   { name: "memo", label: "📝 メモ" },
+  { name: "local", label: "📁 ローカル" },
 ];
 
 const SIZES: { name: StartupSize; label: string; size: [number, number] }[] = [
@@ -137,6 +139,8 @@ export default function App() {
   const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
   const [theme, setTheme] = useState<ThemeName>("pink");
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
+  const [localSections, setLocalSections] = useState<LocalSection[]>([]);
+  const [localImportSource, setLocalImportSource] = useState<LocalImportSource | undefined>(undefined);
 
   const [editingItem, setEditingItem] = useState<LauncherItem | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -187,6 +191,8 @@ export default function App() {
       setTasks(normalizedTasks);
       setCalendar(data.calendar);
       setTheme(data.theme ?? "pink");
+      setLocalSections(data.localSections ?? []);
+      setLocalImportSource(data.localImportSource);
       const prefs = { ...DEFAULT_PREFERENCES, ...(data.preferences ?? {}) };
       setPreferences(prefs);
       setTab(prefs.startupTab);
@@ -217,14 +223,19 @@ export default function App() {
   // 自動保存
   useEffect(() => {
     if (!loaded.current || !dataPath) return;
-    const data: AppData = { version: 1, items, memos, tasks, calendar, theme, preferences };
+    const data: AppData = { version: 1, items, memos, tasks, calendar, theme, preferences, localSections, localImportSource };
     saveAppData(dataPath, data).catch((e) => console.error("save failed", e));
-  }, [items, memos, tasks, calendar, theme, preferences, dataPath]);
+  }, [items, memos, tasks, calendar, theme, preferences, localSections, localImportSource, dataPath]);
 
   // 検索でページリセット
   useEffect(() => {
     setPage(1);
   }, [search]);
+
+  // ローカルタブが非表示化されたら別タブへ退避
+  useEffect(() => {
+    if (!preferences.showLocalTab && tab === "local") setTab("calendar");
+  }, [preferences.showLocalTab, tab]);
 
   // タスク通知チェック（1分ごと）
   useEffect(() => {
@@ -634,6 +645,14 @@ export default function App() {
         >
           📝 メモ
         </button>
+        {preferences.showLocalTab && (
+          <button
+            className={`tab-btn ${tab === "local" ? "active" : ""}`}
+            onClick={() => setTab("local")}
+          >
+            📁 ローカル
+          </button>
+        )}
       </div>
 
       {tab === "launcher" && (
@@ -686,6 +705,15 @@ export default function App() {
           onSave={handleTaskSave}
           onToggleDone={handleTaskToggle}
           onDelete={handleTaskDelete}
+        />
+      )}
+
+      {tab === "local" && preferences.showLocalTab && (
+        <LocalTab
+          sections={localSections}
+          onSectionsChange={setLocalSections}
+          importSource={localImportSource}
+          onImportSourceChange={setLocalImportSource}
         />
       )}
 
@@ -796,7 +824,7 @@ function SettingsModal({ dataPath, theme, preferences, onPathChange, onThemeChan
         <div className="form-group">
           <label>起動時に開くタブ</label>
           <div className="theme-grid">
-            {TABS.map((t) => (
+            {TABS.filter((t) => t.name !== "local" || preferences.showLocalTab).map((t) => (
               <button
                 key={t.name}
                 type="button"
@@ -806,6 +834,32 @@ function SettingsModal({ dataPath, theme, preferences, onPathChange, onThemeChan
                 {t.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>📁 ローカル タブ</label>
+          <div className="theme-grid">
+            <button
+              type="button"
+              className={`theme-btn ${preferences.showLocalTab ? "active" : ""}`}
+              onClick={() => onPreferencesChange({ ...preferences, showLocalTab: true })}
+            >
+              ON（表示する）
+            </button>
+            <button
+              type="button"
+              className={`theme-btn ${!preferences.showLocalTab ? "active" : ""}`}
+              onClick={() =>
+                onPreferencesChange({
+                  ...preferences,
+                  showLocalTab: false,
+                  startupTab: preferences.startupTab === "local" ? "calendar" : preferences.startupTab,
+                })
+              }
+            >
+              OFF（非表示）
+            </button>
           </div>
         </div>
 
