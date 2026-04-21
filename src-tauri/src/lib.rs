@@ -59,8 +59,11 @@ fn open_path(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &target])
+        // forward slash をWindowsのbackslashに変換
+        let win_path = target.replace('/', "\\");
+        // explorer でファイル/フォルダを開く（関連付けアプリで起動）
+        std::process::Command::new("explorer")
+            .arg(&win_path)
             .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
@@ -244,6 +247,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             http_post,
             http_get,

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "work-launcher",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "identifier": "com.cloudpower.quick-launcher",
   "build": {
     "frontendDist": "../dist",

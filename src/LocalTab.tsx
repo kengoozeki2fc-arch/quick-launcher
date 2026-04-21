@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { LocalSection, LocalLink, LocalImportSource } from "./types";
 
 const SECTION_COLORS = [
@@ -331,12 +332,11 @@ function ImportModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleLoadFile = async () => {
-    if (!htmlPath.trim()) return;
+  const loadFromPath = async (path: string) => {
     setError(null);
     setLoading(true);
     try {
-      const raw = await invoke<string>("read_file_abs", { path: htmlPath.trim() });
+      const raw = await invoke<string>("read_file_abs", { path });
       if (!raw) {
         setError("ファイルが空または見つかりません");
         return;
@@ -346,6 +346,29 @@ function ImportModal({
       setError(`読み込み失敗: ${e}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoadFile = async () => {
+    if (!htmlPath.trim()) return;
+    await loadFromPath(htmlPath.trim());
+  };
+
+  const handlePickFile = async () => {
+    setError(null);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "HTML", extensions: ["html", "htm"] }],
+        title: "MyBrain ナビHTMLを選択",
+      });
+      if (typeof selected === "string" && selected) {
+        setHtmlPath(selected);
+        await loadFromPath(selected);
+      }
+    } catch (e) {
+      setError(`ファイル選択失敗: ${e}`);
     }
   };
 
@@ -371,22 +394,35 @@ function ImportModal({
         <h2>📥 HTMLインポート</h2>
 
         <div className="form-group">
-          <label>HTMLファイルパス（任意・指定すると「🔄 ファイル更新」で再読み込み可）</label>
+          <label>HTMLファイル（📂 選択するとパスと内容を自動セット）</label>
           <div style={{ display: "flex", gap: 4 }}>
             <input
               value={htmlPath}
               onChange={(e) => setHtmlPath(e.target.value)}
-              placeholder="/Users/.../MyBrain_ナビ.html"
+              placeholder="ファイル選択 or パス直接入力"
               style={{ flex: 1 }}
             />
             <button
               type="button"
               className="icon-btn"
+              onClick={handlePickFile}
+              disabled={loading}
+              title="ファイル選択ダイアログを開く"
+            >
+              📂 選択
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
               onClick={handleLoadFile}
               disabled={!htmlPath.trim() || loading}
+              title="現在のパスから内容を読み込む"
             >
               {loading ? "⏳" : "読込"}
             </button>
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4 }}>
+            このパスを保存しておくと、以後「🔄 ファイル更新」ボタンで再読込できます
           </div>
         </div>
 
