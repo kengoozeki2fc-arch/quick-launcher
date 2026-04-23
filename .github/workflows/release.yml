@@ -17,12 +17,15 @@ jobs:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
             rust_target: aarch64-apple-darwin
+            arch: mac-aarch64
           - platform: macos-latest
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
+            arch: mac-x64
           - platform: windows-latest
             args: ''
             rust_target: ''
+            arch: win-x64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -46,14 +49,112 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Tauri app
+      # tauri-action は build のみ（tagName を渡さない → Release は作らない）
+      - name: Build Tauri app (build only)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Quick Launcher ${{ github.ref_name }}'
-          releaseBody: 'Win/Mac installer'
-          releaseDraft: false
-          prerelease: false
           args: ${{ matrix.args }}
+
+      # ---------- macOS: DMG に「ここをダブルクリック.command」を同梱 ----------
+      - name: Repack macOS DMG with installer helper
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG_DIR="src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg"
+          DMG=$(ls "$DMG_DIR"/*.dmg | head -1)
+          echo "Original DMG: $DMG"
+
+          WORK=$(mktemp -d)
+          RW_DMG="$WORK/rw.dmg"
+          MOUNT="$WORK/mnt"
+          mkdir -p "$MOUNT"
+
+          # Read-only DMG を書き込み可能形式に変換
+          hdiutil convert "$DMG" -format UDRW -o "$RW_DMG"
+
+          # マウントしてファイル追加
+          hdiutil attach "$RW_DMG" -nobrowse -readwrite -mountpoint "$MOUNT"
+          cp packaging/mac/install.command "$MOUNT/ここをダブルクリック.command"
+          chmod +x "$MOUNT/ここをダブルクリック.command"
+          sync
+          hdiutil detach "$MOUNT"
+
+          # 圧縮付き Read-only DMG に戻して元のパスを上書き
+          rm -f "$DMG"
+          hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG"
+
+          echo "Repacked DMG:"
+          ls -la "$DMG_DIR"
+
+      # ---------- Windows: setup.exe と README を ZIP にまとめる ----------
+      - name: Pack Windows installer + README into ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $nsisDir = "src-tauri\target\release\bundle\nsis"
+          $exe = Get-ChildItem -Path $nsisDir -Filter "*-setup.exe" | Select-Object -First 1
+          if (-not $exe) { throw "NSIS installer not found in $nsisDir" }
+          Write-Host "Setup exe: $($exe.FullName)"
+
+          $stage = Join-Path $env:RUNNER_TEMP "winpkg"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          Copy-Item $exe.FullName -Destination $stage
+
+          # README を UTF-8 BOM 付きで書き出す（Windows メモ帳対応）
+          $readmeSrc = Get-Content "packaging\win\README_win.txt" -Raw -Encoding UTF8
+          $readmePath = Join-Path $stage "README_Windows.txt"
+          $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+          [System.IO.File]::WriteAllText($readmePath, $readmeSrc, $utf8Bom)
+
+          $zipName = ($exe.BaseName) + ".zip"
+          $zipPath = Join-Path $nsisDir $zipName
+          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+          Compress-Archive -Path "$stage\*" -DestinationPath $zipPath
+
+          Write-Host "Packed ZIP: $zipPath"
+          Get-ChildItem $nsisDir
+
+      # ---------- アーティファクトをアップロード ----------
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: |
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/nsis/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------- 全ビルド完了後に Release を作成 ----------
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List collected files
+        run: find artifacts -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Work Launcher ${{ github.ref_name }}
+          body_path: packaging/release_notes.md
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+          draft: false
+          prerelease: false
