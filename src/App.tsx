@@ -13,6 +13,7 @@ import TaskTab from "./TaskTab";
 import LocalTab from "./LocalTab";
 import CalendarTab, { toUtcDate, formatDateLabel, formatTime } from "./CalendarTab";
 import type { CalendarEvent } from "./CalendarTab";
+import { kcLogin, kcLogout, kcSilentLogin, onLoginSuccess, type TokenSet } from "./auth/keycloak";
 
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/kengoozeki2fc-arch/quick-launcher/releases/latest";
 const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000; // 1時間
@@ -157,6 +158,24 @@ export default function App() {
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("");
   const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  // Pattern D 統合認証（Keycloak）
+  const [kcUser, setKcUser] = useState<TokenSet | null>(null);
+  useEffect(() => {
+    // 起動時の silent login（refresh_tokenで無音再認証）
+    kcSilentLogin()
+      .then((ts) => { if (ts) setKcUser(ts); })
+      .catch((e) => console.warn("kcSilentLogin failed:", e));
+    // deep-link callback でログイン完了したら通知を受ける
+    const off = onLoginSuccess((ts) => setKcUser(ts));
+    return off;
+  }, []);
+  const handleKcLogin = useCallback(async () => {
+    try { await kcLogin(); } catch (e) { console.error("kcLogin:", e); }
+  }, []);
+  const handleKcLogout = useCallback(async () => {
+    try { await kcLogout(); setKcUser(null); } catch (e) { console.error("kcLogout:", e); }
+  }, []);
 
   const loaded = useRef(false);
 
@@ -593,9 +612,26 @@ export default function App() {
 
       <div className="header">
         <h1>Work Launcher</h1>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {tab === "launcher" && (
             <button className="add-btn" onClick={handleAdd}>+ 追加</button>
+          )}
+          {kcUser ? (
+            <button
+              className="icon-btn icon-btn-slim"
+              onClick={handleKcLogout}
+              title={`ログイン中: ${kcUser.email ?? "認証済"}（クリックでログアウト）`}
+            >
+              🔓
+            </button>
+          ) : (
+            <button
+              className="icon-btn icon-btn-slim"
+              onClick={handleKcLogin}
+              title="統合認証ログイン"
+            >
+              🔐
+            </button>
           )}
           <button className="icon-btn icon-btn-slim" onClick={handleMinimize} title="最小化">−</button>
           <button className="icon-btn icon-btn-slim" onClick={handleToggleMaximize} title="最大化">□</button>

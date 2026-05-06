@@ -2,6 +2,10 @@ use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Sha256, Digest};
 use rand::RngCore;
+use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
+
+mod kc_auth;
 
 #[tauri::command]
 fn read_file_abs(path: String) -> Result<String, String> {
@@ -248,6 +252,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .manage(kc_auth::AuthState::default())
         .invoke_handler(tauri::generate_handler![
             http_post,
             http_get,
@@ -257,7 +263,11 @@ pub fn run() {
             write_file_abs,
             default_data_path,
             desktop_path,
-            open_path
+            open_path,
+            kc_auth::kc_login,
+            kc_auth::kc_silent_login,
+            kc_auth::kc_token,
+            kc_auth::kc_logout,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -267,6 +277,19 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // Pattern D: work-launcher://oauth/callback?... の deep-link 受信
+            let app_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    let url_str = url.to_string();
+                    let h = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = kc_auth::handle_callback(&h, &url_str).await {
+                            eprintln!("kc deep-link error: {e}");
+                        }
+                    });
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
