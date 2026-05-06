@@ -26,6 +26,7 @@ import { DEFAULT_PREFERENCES } from "./types";
 import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
 import LocalTab from "./LocalTab";
+import CalendarTab from "./CalendarTab";
 import {
   kcLogin,
   kcLogout,
@@ -557,12 +558,10 @@ export default function App() {
           {/* タブ本体 */}
           <div className="tab-content">
             {tab === "calendar" && (
-              <div className="calendar-placeholder">
-                <p>📅 カレンダー機能は Phase 2.6 で復活予定</p>
-                <p className="hint">
-                  v0.7.4 の Outlookカレンダー連携は次フェーズで再統合します
-                </p>
-              </div>
+              <CalendarTab
+                calendar={calendar}
+                onCalendarChange={setCalendar}
+              />
             )}
             {tab === "task" && (
               <TaskTab
