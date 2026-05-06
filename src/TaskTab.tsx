@@ -1,184 +1,223 @@
-import { useState } from "react";
-import type { Task } from "./types";
+// TaskTab — Phase 2.5 で API/キャッシュベースに書き換え
+// 完了タスクは「期限が今日以降」のものだけ「完了」セクションに表示（v0.6.2 仕様継続）
 
-interface Props {
-  tasks: Task[];
-  onSave: (task: Task) => void;
-  onToggleDone: (id: string) => void;
-  onDelete: (id: string) => void;
+import { useState } from "react";
+import type { LauncherTask } from "./api/types";
+
+type Props = {
+  tasks: LauncherTask[];
+  onCreate: (input: {
+    title: string;
+    dueDate?: string | null;
+    isAllDay?: boolean;
+  }) => Promise<void>;
+  onUpdate: (
+    id: string,
+    patch: {
+      title?: string;
+      dueDate?: string | null;
+      isAllDay?: boolean;
+      completedAt?: string | null;
+    },
+  ) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+};
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
-export default function TaskTab({ tasks, onSave, onToggleDone, onDelete }: Props) {
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Task | null>(null);
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+export default function TaskTab({ tasks, onCreate, onUpdate, onDelete }: Props) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const openNew = () => {
-    setEditing(null);
-    setTitle("");
-    const now = new Date();
-    setDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
-    setTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
-    setShowForm(true);
-  };
+  const now = new Date();
+  const today0 = startOfDay(now);
 
-  const openEdit = (task: Task) => {
-    setEditing(task);
-    setTitle(task.title);
-    setDate(task.date);
-    setTime(task.time);
-    setShowForm(true);
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      id: editing?.id ?? crypto.randomUUID(),
-      title,
-      date,
-      time,
-      done: editing?.done ?? false,
-      notified: editing?.notified ?? false,
-      createdAt: editing?.createdAt ?? new Date().toISOString(),
+  // 未完了：期限昇順（超過→近い未来→遠い未来）
+  const pending = tasks
+    .filter((t) => !t.completedAt)
+    .sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
-    setShowForm(false);
-  };
 
-  const handleDelete = (id: string) => {
-    if (confirm("このタスクを削除しますか？")) {
-      onDelete(id);
+  // 完了：期限が今日以降のものだけ表示（翌日になったら自動非表示）
+  const completed = tasks
+    .filter((t) => {
+      if (!t.completedAt) return false;
+      if (!t.dueDate) return false;
+      return startOfDay(new Date(t.dueDate)) >= today0;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime(),
+    );
+
+  async function handleCreate() {
+    if (!newTitle.trim()) return;
+    setBusy(true);
+    try {
+      let dueDate: string | null = null;
+      let isAllDay = true;
+      if (newDate) {
+        const time = newTime || "00:00";
+        dueDate = new Date(`${newDate}T${time}:00`).toISOString();
+        isAllDay = !newTime;
+      }
+      await onCreate({ title: newTitle, dueDate, isAllDay });
+      setNewTitle("");
+      setNewDate("");
+      setNewTime("");
+    } finally {
+      setBusy(false);
     }
-  };
+  }
 
-  const getDeadline = (task: Task): Date => {
-    return new Date(`${task.date}T${task.time}:00`);
-  };
+  async function toggleComplete(t: LauncherTask) {
+    setBusy(true);
+    try {
+      await onUpdate(t.id, {
+        completedAt: t.completedAt ? null : new Date().toISOString(),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const isOverdue = (task: Task): boolean => {
-    if (task.done) return false;
-    return getDeadline(task) < new Date();
-  };
+  async function handleDelete(id: string) {
+    setBusy(true);
+    try {
+      await onDelete(id);
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const isNearDeadline = (task: Task): boolean => {
-    if (task.done) return false;
-    const deadline = getDeadline(task);
-    const now = new Date();
-    const diffMs = deadline.getTime() - now.getTime();
-    return diffMs > 0 && diffMs <= 60 * 60 * 1000;
-  };
+  function isOverdue(t: LauncherTask): boolean {
+    if (!t.dueDate || t.completedAt) return false;
+    return new Date(t.dueDate).getTime() < now.getTime();
+  }
 
-  const formatDeadline = (task: Task) => {
-    const d = getDeadline(task);
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  };
-
-  // 期限昇順で並べる: 超過（過去）→ 本日に近い → 遠い未来
-  const activeTasks = tasks
-    .filter((t) => !t.done)
-    .slice()
-    .sort((a, b) => getDeadline(a).getTime() - getDeadline(b).getTime());
-  // 完了タスクの翌日自動削除はApp.tsxの起動時プルーンで実施。ここでは全て表示。
-  const doneTasks = tasks.filter((t) => t.done);
-
-  const renderTask = (task: Task) => (
-    <div
-      key={task.id}
-      className={`task-card ${task.done ? "task-done" : ""} ${isOverdue(task) ? "task-overdue" : ""} ${isNearDeadline(task) ? "task-near" : ""}`}
-    >
-      <div className="task-header">
-        <label className="task-check-label">
-          <input
-            type="checkbox"
-            checked={task.done}
-            onChange={() => onToggleDone(task.id)}
-          />
-          <span className="task-title">{task.title}</span>
-        </label>
-        <div className="item-actions">
-          {!task.done && (
-            <button className="icon-btn" onClick={() => openEdit(task)}>編集</button>
-          )}
-          <button className="icon-btn danger" onClick={() => handleDelete(task.id)}>削除</button>
-        </div>
-      </div>
-      <div className="task-deadline">
-        {isOverdue(task) && <span className="badge badge-overdue">⚠ 時間超過</span>}
-        {isNearDeadline(task) && <span className="badge badge-near">⏰ まもなく</span>}
-        <span className="task-time-label">期限: {formatDeadline(task)}</span>
-      </div>
-    </div>
-  );
+  function formatDue(t: LauncherTask): string {
+    if (!t.dueDate) return "期限なし";
+    const d = new Date(t.dueDate);
+    if (t.isAllDay) return d.toLocaleDateString("ja-JP");
+    return d.toLocaleString("ja-JP", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
 
   return (
-    <div className="tab-content">
-      <div className="tab-toolbar">
-        <button className="add-btn" onClick={openNew}>+ 新規タスク</button>
+    <div className="task-tab">
+      <div className="task-add">
+        <input
+          type="text"
+          placeholder="やること"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          disabled={busy}
+        />
+        <input
+          type="date"
+          value={newDate}
+          onChange={(e) => setNewDate(e.target.value)}
+          disabled={busy}
+        />
+        <input
+          type="time"
+          value={newTime}
+          onChange={(e) => setNewTime(e.target.value)}
+          disabled={busy}
+        />
+        <button onClick={handleCreate} disabled={busy || !newTitle.trim()}>
+          ＋
+        </button>
       </div>
 
-      {tasks.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ fontSize: 32 }}>✅</p>
-          <p>「+ 新規タスク」からタスクを作成しよう</p>
-        </div>
-      ) : (
+      {pending.length === 0 && completed.length === 0 && (
+        <p className="empty">タスクはまだありません</p>
+      )}
+
+      {pending.length > 0 && (
         <>
-          {activeTasks.length > 0 && (
-            <div className="task-section">
-              <div className="task-section-label">未完了 ({activeTasks.length})</div>
-              <div className="task-list">{activeTasks.map(renderTask)}</div>
-            </div>
-          )}
-          {doneTasks.length > 0 && (
-            <div className="task-section">
-              <div className="task-section-label">完了 ({doneTasks.length})</div>
-              <div className="task-list">{doneTasks.map(renderTask)}</div>
-            </div>
-          )}
+          <h3 className="task-section-title">📌 未完了</h3>
+          <ul className="task-list">
+            {pending.map((t) => (
+              <li
+                key={t.id}
+                className={`task-item ${isOverdue(t) ? "overdue" : ""}`}
+              >
+                <button
+                  className="task-check"
+                  onClick={() => toggleComplete(t)}
+                  disabled={busy}
+                  aria-label="完了にする"
+                >
+                  ⬜
+                </button>
+                <div className="task-body">
+                  <div className="task-title">{t.title}</div>
+                  <div className="task-due">
+                    {formatDue(t)}
+                    {isOverdue(t) && (
+                      <span className="overdue-badge">超過</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  className="task-delete"
+                  onClick={() => handleDelete(t.id)}
+                  disabled={busy}
+                  aria-label="削除"
+                >
+                  🗑
+                </button>
+              </li>
+            ))}
+          </ul>
         </>
       )}
 
-      {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{editing ? "タスクを編集" : "新規タスク"}</h2>
-            <form onSubmit={handleSave}>
-              <div className="form-group">
-                <label>やること</label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="タスクの内容"
-                  required
-                  autoFocus
-                />
-              </div>
-              <div className="form-group">
-                <label>日付</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>時間</label>
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => setShowForm(false)}>キャンセル</button>
-                <button type="submit" className="btn-save">保存</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {completed.length > 0 && (
+        <>
+          <h3 className="task-section-title">✅ 完了</h3>
+          <ul className="task-list">
+            {completed.map((t) => (
+              <li key={t.id} className="task-item completed">
+                <button
+                  className="task-check"
+                  onClick={() => toggleComplete(t)}
+                  disabled={busy}
+                  aria-label="未完了に戻す"
+                >
+                  ✅
+                </button>
+                <div className="task-body">
+                  <div className="task-title">{t.title}</div>
+                  <div className="task-due">{formatDue(t)}</div>
+                </div>
+                <button
+                  className="task-delete"
+                  onClick={() => handleDelete(t.id)}
+                  disabled={busy}
+                  aria-label="削除"
+                >
+                  🗑
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

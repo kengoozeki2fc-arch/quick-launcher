@@ -1,42 +1,6 @@
-export interface LauncherItem {
-  id: string;
-  title: string;
-  url: string;
-  loginId: string;
-  password: string;
-  otp: boolean;
-}
-
-export interface LocalLink {
-  id: string;
-  label: string;
-  path: string;
-}
-
-export interface LocalSection {
-  id: string;
-  title: string;
-  links: LocalLink[];
-}
-
-export interface Memo {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  date: string;      // YYYY-MM-DD
-  time: string;      // HH:MM
-  done: boolean;
-  notified: boolean;
-  createdAt: string;
-  completedAt?: string; // YYYY-MM-DD（完了日）
-}
+// Work Launcher V1.0+ ローカル設定型
+// メモ/タスク/セクション/アイテムは API/cache 経由（src/api/types.ts）に移管
+// ここにはアプリ全体のローカル設定（カレンダー認証・テーマ・preferences）のみ残す
 
 export interface CalendarSettings {
   tenantId: string;
@@ -48,7 +12,7 @@ export interface CalendarSettings {
 
 export type ThemeName = "pink" | "blue" | "black" | "white";
 
-export type TabName = "calendar" | "task" | "launcher" | "memo" | "local";
+export type TabName = "calendar" | "task" | "memo" | "local";
 export type StartupSize = "compact" | "normal";
 
 export interface Preferences {
@@ -57,22 +21,11 @@ export interface Preferences {
   showLocalTab: boolean;
 }
 
-export interface LocalImportSource {
-  htmlPath: string;
-  winBase: string;
-  macBase: string;
-}
-
 export interface AppData {
-  version: 1;
-  items: LauncherItem[];
-  memos: Memo[];
-  tasks: Task[];
+  version: 2;
   calendar: CalendarSettings | null;
   theme: ThemeName;
   preferences: Preferences;
-  localSections: LocalSection[];
-  localImportSource?: LocalImportSource;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -82,13 +35,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
 };
 
 export const DEFAULT_APP_DATA: AppData = {
-  version: 1,
-  items: [],
-  memos: [],
-  tasks: [],
+  version: 2,
   calendar: null,
   theme: "pink",
   preferences: DEFAULT_PREFERENCES,
-  localSections: [],
-  localImportSource: undefined,
 };

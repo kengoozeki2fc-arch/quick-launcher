@@ -13,7 +13,13 @@
     "shell:allow-open",
     "fs:allow-desktop-read-recursive",
     "fs:allow-desktop-write-recursive",
+    "fs:allow-applocaldata-read-recursive",
+    "fs:allow-applocaldata-write-recursive",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-exists",
     "http:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "deep-link:default"
   ]
 }
