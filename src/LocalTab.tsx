@@ -1,581 +1,522 @@
+// LocalTab — Phase 2.5 で API/キャッシュベースに全面書き換え
+// 旧 HTMLインポート機能・LocalSection/LocalLink 構造はすべて廃止
+// データソース: useLauncherData の sections（LauncherSection[]・items 内包）
+
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { LocalSection, LocalLink, LocalImportSource } from "./types";
+import type {
+  LauncherSection,
+  LauncherItem,
+  ItemTargetType,
+} from "./api/types";
 
-const SECTION_COLORS = [
-  { bg: "#fde4ec", border: "#f48fb1", label: "#880e4f" }, // pink
-  { bg: "#e1f5fe", border: "#81d4fa", label: "#01579b" }, // sky
-  { bg: "#e8f5e9", border: "#a5d6a7", label: "#1b5e20" }, // green
-  { bg: "#fff4e6", border: "#ffcc80", label: "#e65100" }, // orange
-  { bg: "#ede7f6", border: "#b39ddb", label: "#311b92" }, // violet
-  { bg: "#fff9c4", border: "#fff176", label: "#827717" }, // yellow
-  { bg: "#e0f7fa", border: "#80deea", label: "#006064" }, // cyan
-  { bg: "#fce4ec", border: "#f8bbd0", label: "#ad1457" }, // rose
-];
+const COLORS = [
+  "pink",
+  "sky",
+  "green",
+  "orange",
+  "violet",
+  "yellow",
+  "cyan",
+  "rose",
+] as const;
 
-const DEFAULT_WIN_BASE = "C:/Users/y-takahashi/MyBrain/";
-const DEFAULT_MAC_BASE =
-  "/Users/kengoozeki/Library/CloudStorage/OneDrive-クラウドパワー株式会社/MyBrain/";
-
-function newId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function percentDecode(s: string): string {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-
-function fileUrlToPath(href: string): string {
-  if (!href.startsWith("file://")) return href;
-  let p = href.replace(/^file:\/\//, "");
-  // file:///C:/... の先頭スラッシュを外す
-  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
-  return percentDecode(p);
-}
-
-function applyBaseReplace(path: string, from: string, to: string): string {
-  if (!from) return path;
-  if (path.startsWith(from)) return to + path.slice(from.length);
-  return path;
-}
-
-function parseHtmlImport(
-  html: string,
-  winBase: string,
-  macBase: string
-): LocalSection[] {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const sections: LocalSection[] = [];
-  doc.querySelectorAll("div.section, .section").forEach((sec) => {
-    const h2 = sec.querySelector("h2");
-    const title = (h2?.textContent ?? "無題").trim();
-    const links: LocalLink[] = [];
-    sec.querySelectorAll("a[href]").forEach((a) => {
-      const href = (a.getAttribute("href") ?? "").trim();
-      if (!href) return;
-      const rawPath = fileUrlToPath(href);
-      const path = applyBaseReplace(rawPath, winBase, macBase);
-      const label = (a.textContent ?? path).trim() || path;
-      links.push({ id: newId(), label, path });
-    });
-    if (links.length > 0) {
-      sections.push({ id: newId(), title, links });
-    }
-  });
-  return sections;
-}
-
-interface Props {
-  sections: LocalSection[];
-  onSectionsChange: (next: LocalSection[]) => void;
-  importSource: LocalImportSource | undefined;
-  onImportSourceChange: (next: LocalImportSource | undefined) => void;
-}
+type Props = {
+  sections: LauncherSection[];
+  onCreateSection: (input: {
+    name: string;
+    type?: string;
+    color?: string;
+  }) => Promise<void>;
+  onUpdateSection: (
+    id: string,
+    patch: Partial<{ name: string; color: string; type: string }>,
+  ) => Promise<void>;
+  onDeleteSection: (id: string) => Promise<void>;
+  onCreateItem: (input: {
+    sectionId: string;
+    name: string;
+    target: string;
+    targetType?: ItemTargetType;
+    icon?: string;
+  }) => Promise<void>;
+  onUpdateItem: (
+    id: string,
+    patch: Partial<{
+      name: string;
+      target: string;
+      targetType: ItemTargetType;
+      icon: string | null;
+    }>,
+  ) => Promise<void>;
+  onDeleteItem: (id: string) => Promise<void>;
+  onTouchItem: (id: string) => Promise<void>;
+};
 
 export default function LocalTab({
   sections,
-  onSectionsChange,
-  importSource,
-  onImportSourceChange,
+  onCreateSection,
+  onUpdateSection,
+  onDeleteSection,
+  onCreateItem,
+  onUpdateItem,
+  onDeleteItem,
+  onTouchItem,
 }: Props) {
-  const [showImport, setShowImport] = useState(false);
   const [showAddSection, setShowAddSection] = useState(false);
-  const [adding, setAdding] = useState<{ sectionId: string } | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [newSectionColor, setNewSectionColor] =
+    useState<(typeof COLORS)[number]>("pink");
+  const [adding, setAdding] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleOpen = async (path: string) => {
+  async function handleOpenItem(item: LauncherItem) {
     try {
-      await invoke("open_path", { path });
+      if (item.targetType === "URL") {
+        await open(item.target);
+      } else {
+        await invoke("open_path", { path: item.target });
+      }
+      onTouchItem(item.id).catch(() => {});
     } catch (e) {
-      alert(`開けませんでした: ${e}`);
+      console.error("open failed:", e);
     }
-  };
+  }
 
-  const handleDeleteLink = (sectionId: string, linkId: string) => {
-    onSectionsChange(
-      sections.map((s) =>
-        s.id === sectionId
-          ? { ...s, links: s.links.filter((l) => l.id !== linkId) }
-          : s
-      )
-    );
-  };
-
-  const handleDeleteSection = (sectionId: string) => {
-    if (!confirm("このセクションを削除しますか？")) return;
-    onSectionsChange(sections.filter((s) => s.id !== sectionId));
-  };
-
-  const handleImport = (
-    imported: LocalSection[],
-    source: LocalImportSource | null,
-    mode: "append" | "replace"
-  ) => {
-    if (mode === "replace") {
-      onSectionsChange(imported);
-    } else {
-      onSectionsChange([...sections, ...imported]);
-    }
-    if (source) onImportSourceChange(source);
-  };
-
-  const handleRefresh = async () => {
-    if (!importSource?.htmlPath) return;
-    setRefreshing(true);
-    setRefreshMsg(null);
+  async function handleAddSection() {
+    if (!newSectionName.trim()) return;
+    setBusy(true);
     try {
-      const raw = await invoke<string>("read_file_abs", { path: importSource.htmlPath });
-      if (!raw) {
-        setRefreshMsg(`ファイルが空です: ${importSource.htmlPath}`);
-        return;
-      }
-      const parsed = parseHtmlImport(raw, importSource.winBase, importSource.macBase);
-      if (parsed.length === 0) {
-        setRefreshMsg("セクションが見つかりませんでした");
-        return;
-      }
-      onSectionsChange(parsed);
-      setRefreshMsg(`✅ 更新しました（${parsed.length} セクション）`);
-      setTimeout(() => setRefreshMsg(null), 3000);
-    } catch (e) {
-      setRefreshMsg(`更新失敗: ${e}`);
+      await onCreateSection({
+        name: newSectionName.trim(),
+        color: newSectionColor,
+      });
+      setNewSectionName("");
+      setNewSectionColor("pink");
+      setShowAddSection(false);
     } finally {
-      setRefreshing(false);
+      setBusy(false);
     }
-  };
-
-  const handleAddSection = (title: string) => {
-    onSectionsChange([...sections, { id: newId(), title, links: [] }]);
-  };
-
-  const handleAddLink = (sectionId: string, label: string, path: string) => {
-    onSectionsChange(
-      sections.map((s) =>
-        s.id === sectionId
-          ? { ...s, links: [...s.links, { id: newId(), label, path }] }
-          : s
-      )
-    );
-  };
+  }
 
   return (
     <div className="local-tab">
       <div className="local-toolbar">
-        <button className="icon-btn" onClick={() => setShowImport(true)}>
-          📥 HTMLインポート
-        </button>
-        <button
-          className="icon-btn"
-          onClick={handleRefresh}
-          disabled={!importSource?.htmlPath || refreshing}
-          title={
-            importSource?.htmlPath
-              ? `${importSource.htmlPath} から再読み込み（既存セクションを上書き）`
-              : "インポート時にHTMLファイルパスを指定すると更新できます"
-          }
-        >
-          {refreshing ? "⏳ 更新中…" : "🔄 ファイル更新"}
-        </button>
-        <button className="icon-btn" onClick={() => setShowAddSection(true)}>
-          ＋ セクション追加
-        </button>
+        {showAddSection ? null : (
+          <button onClick={() => setShowAddSection(true)} className="add-btn">
+            ＋ セクション追加
+          </button>
+        )}
       </div>
-      {refreshMsg && (
-        <div style={{ fontSize: 11, opacity: 0.8 }}>{refreshMsg}</div>
-      )}
-      {importSource?.htmlPath && (
-        <div style={{ fontSize: 10, opacity: 0.6 }}>
-          参照: {importSource.htmlPath}
+
+      {showAddSection && (
+        <div className="local-add-section">
+          <input
+            type="text"
+            placeholder="セクション名"
+            value={newSectionName}
+            onChange={(e) => setNewSectionName(e.target.value)}
+            disabled={busy}
+          />
+          <select
+            value={newSectionColor}
+            onChange={(e) =>
+              setNewSectionColor(e.target.value as (typeof COLORS)[number])
+            }
+            disabled={busy}
+          >
+            {COLORS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleAddSection}
+            disabled={busy || !newSectionName.trim()}
+          >
+            追加
+          </button>
+          <button
+            onClick={() => {
+              setShowAddSection(false);
+              setNewSectionName("");
+            }}
+            disabled={busy}
+          >
+            キャンセル
+          </button>
         </div>
       )}
 
       {sections.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ fontSize: 32 }}>📁</p>
-          <p>ローカルファイル/フォルダを登録できます</p>
-          <p style={{ fontSize: 11, opacity: 0.7 }}>
-            「📥 HTMLインポート」でMyBrain_ナビ.html風のHTMLを取り込めます
-          </p>
-        </div>
+        <p className="empty">
+          セクションがまだありません。Web画面（admin-console）またはここから追加してください。
+        </p>
       ) : (
-        sections.map((section, idx) => {
-          const palette = SECTION_COLORS[idx % SECTION_COLORS.length];
-          return (
-            <div
-              key={section.id}
-              className="local-section"
-              style={{
-                background: palette.bg,
-                borderLeft: `4px solid ${palette.border}`,
-              }}
+        sections.map((sec) => (
+          <SectionCard
+            key={sec.id}
+            section={sec}
+            adding={adding === sec.id}
+            onSetAdding={(b) => setAdding(b ? sec.id : null)}
+            onUpdateSection={(patch) => onUpdateSection(sec.id, patch)}
+            onDeleteSection={() => onDeleteSection(sec.id)}
+            onCreateItem={(input) =>
+              onCreateItem({ sectionId: sec.id, ...input })
+            }
+            onUpdateItem={onUpdateItem}
+            onDeleteItem={onDeleteItem}
+            onOpenItem={handleOpenItem}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SectionCard
+// ============================================================
+type SectionCardProps = {
+  section: LauncherSection;
+  adding: boolean;
+  onSetAdding: (b: boolean) => void;
+  onUpdateSection: (
+    patch: Partial<{ name: string; color: string; type: string }>,
+  ) => Promise<void>;
+  onDeleteSection: () => Promise<void>;
+  onCreateItem: (input: {
+    name: string;
+    target: string;
+    targetType?: ItemTargetType;
+    icon?: string;
+  }) => Promise<void>;
+  onUpdateItem: (
+    id: string,
+    patch: Partial<{
+      name: string;
+      target: string;
+      targetType: ItemTargetType;
+      icon: string | null;
+    }>,
+  ) => Promise<void>;
+  onDeleteItem: (id: string) => Promise<void>;
+  onOpenItem: (item: LauncherItem) => void;
+};
+
+function SectionCard({
+  section,
+  adding,
+  onSetAdding,
+  onUpdateSection,
+  onDeleteSection,
+  onCreateItem,
+  onUpdateItem,
+  onDeleteItem,
+  onOpenItem,
+}: SectionCardProps) {
+  const [editingSection, setEditingSection] = useState(false);
+  const [secName, setSecName] = useState(section.name);
+  const [secColor, setSecColor] = useState<string>(section.color);
+  const [busy, setBusy] = useState(false);
+
+  // 新規アイテム入力
+  const [newName, setNewName] = useState("");
+  const [newTarget, setNewTarget] = useState("");
+  const [newTargetType, setNewTargetType] = useState<ItemTargetType>("URL");
+  const [newIcon, setNewIcon] = useState("");
+
+  async function handleSelectFile() {
+    try {
+      const result = await openDialog({ multiple: false });
+      if (result && typeof result === "string") {
+        setNewTarget(result);
+        setNewTargetType("FILE_LOCAL");
+        if (!newName) {
+          const base = result.split(/[/\\]/).pop() ?? result;
+          setNewName(base);
+        }
+      }
+    } catch (e) {
+      console.error("file pick:", e);
+    }
+  }
+
+  async function handleSaveSection() {
+    setBusy(true);
+    try {
+      await onUpdateSection({ name: secName, color: secColor });
+      setEditingSection(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddItem() {
+    if (!newName.trim() || !newTarget.trim()) return;
+    setBusy(true);
+    try {
+      await onCreateItem({
+        name: newName.trim(),
+        target: newTarget.trim(),
+        targetType: newTargetType,
+        icon: newIcon.trim() || undefined,
+      });
+      setNewName("");
+      setNewTarget("");
+      setNewIcon("");
+      setNewTargetType("URL");
+      onSetAdding(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteSection() {
+    if (
+      !confirm(
+        `セクション「${section.name}」と配下アイテム ${section.items.length}件 を削除しますか？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await onDeleteSection();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`local-section local-color-${section.color}`}>
+      <div className="local-section-header">
+        {editingSection ? (
+          <>
+            <input
+              value={secName}
+              onChange={(e) => setSecName(e.target.value)}
+              disabled={busy}
+            />
+            <select
+              value={secColor}
+              onChange={(e) => setSecColor(e.target.value)}
+              disabled={busy}
             >
-              <div className="local-section-head">
-                <div
-                  className="local-section-title"
-                  style={{ color: palette.label }}
-                >
-                  {section.title}
-                </div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button
-                    className="icon-btn icon-btn-slim"
-                    onClick={() => setAdding({ sectionId: section.id })}
-                    title="ボタンを追加"
-                  >
-                    ＋
-                  </button>
-                  <button
-                    className="icon-btn icon-btn-slim"
-                    onClick={() => handleDeleteSection(section.id)}
-                    title="セクション削除"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-              <div className="local-grid">
-                {section.links.length === 0 ? (
-                  <span className="local-empty">（空）</span>
-                ) : (
-                  section.links.map((link) => (
-                    <div
-                      key={link.id}
-                      className="local-btn"
-                      style={{
-                        background: "#ffffff",
-                        border: `1px solid ${palette.border}`,
-                      }}
-                    >
-                      <button
-                        className="local-btn-label"
-                        onClick={() => handleOpen(link.path)}
-                        title={link.path}
-                      >
-                        {link.label}
-                      </button>
-                      <button
-                        className="local-btn-del"
-                        onClick={() =>
-                          handleDeleteLink(section.id, link.id)
-                        }
-                        title="削除"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        })
-      )}
+              {COLORS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <button onClick={handleSaveSection} disabled={busy}>
+              保存
+            </button>
+            <button
+              onClick={() => {
+                setSecName(section.name);
+                setSecColor(section.color);
+                setEditingSection(false);
+              }}
+              disabled={busy}
+            >
+              取消
+            </button>
+          </>
+        ) : (
+          <>
+            <span className={`local-section-dot dot-${section.color}`} />
+            <h3>{section.name}</h3>
+            {section.isFromTemplate && (
+              <span className="badge-template">テンプレ由来</span>
+            )}
+            <span style={{ flex: 1 }} />
+            <button
+              onClick={() => setEditingSection(true)}
+              title="セクション編集"
+              className="icon-btn-slim"
+            >
+              ✎
+            </button>
+            <button
+              onClick={() => onSetAdding(!adding)}
+              title={adding ? "閉じる" : "アイテム追加"}
+              className="icon-btn-slim"
+            >
+              {adding ? "✕" : "＋"}
+            </button>
+            <button
+              onClick={handleDeleteSection}
+              title="セクション削除"
+              className="icon-btn-slim"
+              disabled={busy}
+            >
+              🗑
+            </button>
+          </>
+        )}
+      </div>
 
-      {showImport && (
-        <ImportModal
-          initial={importSource}
-          onClose={() => setShowImport(false)}
-          onImport={(s, source, mode) => {
-            handleImport(s, source, mode);
-            setShowImport(false);
-          }}
-        />
-      )}
-
-      {showAddSection && (
-        <AddSectionModal
-          onClose={() => setShowAddSection(false)}
-          onAdd={(title) => {
-            handleAddSection(title);
-            setShowAddSection(false);
-          }}
-        />
+      {section.items.length === 0 && !adding ? (
+        <p className="empty-small">アイテムはまだありません</p>
+      ) : (
+        <ul className="local-items">
+          {section.items.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              onOpen={() => onOpenItem(item)}
+              onUpdate={(patch) => onUpdateItem(item.id, patch)}
+              onDelete={() => onDeleteItem(item.id)}
+            />
+          ))}
+        </ul>
       )}
 
       {adding && (
-        <AddLinkModal
-          onClose={() => setAdding(null)}
-          onAdd={(label, path) => {
-            handleAddLink(adding.sectionId, label, path);
-            setAdding(null);
-          }}
-        />
+        <div className="local-add-item">
+          <input
+            placeholder="🔗"
+            value={newIcon}
+            onChange={(e) => setNewIcon(e.target.value)}
+            maxLength={4}
+            style={{ width: 40 }}
+          />
+          <input
+            placeholder="名前"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <input
+            placeholder="URL or パス"
+            value={newTarget}
+            onChange={(e) => setNewTarget(e.target.value)}
+          />
+          <select
+            value={newTargetType}
+            onChange={(e) =>
+              setNewTargetType(e.target.value as ItemTargetType)
+            }
+          >
+            <option value="URL">URL</option>
+            <option value="FILE_LOCAL">ファイル</option>
+          </select>
+          <button onClick={handleSelectFile} title="ファイル選択">
+            📂
+          </button>
+          <button
+            onClick={handleAddItem}
+            disabled={busy || !newName.trim() || !newTarget.trim()}
+          >
+            追加
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-function ImportModal({
-  initial,
-  onClose,
-  onImport,
+// ============================================================
+// ItemRow（インライン編集）
+// ============================================================
+function ItemRow({
+  item,
+  onOpen,
+  onUpdate,
+  onDelete,
 }: {
-  initial: LocalImportSource | undefined;
-  onClose: () => void;
-  onImport: (
-    s: LocalSection[],
-    source: LocalImportSource | null,
-    mode: "append" | "replace"
-  ) => void;
+  item: LauncherItem;
+  onOpen: () => void;
+  onUpdate: (
+    patch: Partial<{
+      name: string;
+      target: string;
+      targetType: ItemTargetType;
+      icon: string | null;
+    }>,
+  ) => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
-  const [html, setHtml] = useState("");
-  const [htmlPath, setHtmlPath] = useState(initial?.htmlPath ?? "");
-  const [winBase, setWinBase] = useState(initial?.winBase ?? DEFAULT_WIN_BASE);
-  const [macBase, setMacBase] = useState(initial?.macBase ?? DEFAULT_MAC_BASE);
-  const [mode, setMode] = useState<"append" | "replace">("replace");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(item.name);
+  const [target, setTarget] = useState(item.target);
+  const [icon, setIcon] = useState(item.icon ?? "");
+  const [busy, setBusy] = useState(false);
 
-  const loadFromPath = async (path: string) => {
-    setError(null);
-    setLoading(true);
+  async function handleSave() {
+    setBusy(true);
     try {
-      const raw = await invoke<string>("read_file_abs", { path });
-      if (!raw) {
-        setError("ファイルが空または見つかりません");
-        return;
-      }
-      setHtml(raw);
-    } catch (e) {
-      setError(`読み込み失敗: ${e}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLoadFile = async () => {
-    if (!htmlPath.trim()) return;
-    await loadFromPath(htmlPath.trim());
-  };
-
-  const handlePickFile = async () => {
-    setError(null);
-    try {
-      const selected = await openDialog({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "HTML", extensions: ["html", "htm"] }],
-        title: "MyBrain ナビHTMLを選択",
+      await onUpdate({
+        name: name.trim(),
+        target: target.trim(),
+        icon: icon.trim() || null,
       });
-      if (typeof selected === "string" && selected) {
-        setHtmlPath(selected);
-        await loadFromPath(selected);
-      }
-    } catch (e) {
-      setError(`ファイル選択失敗: ${e}`);
+      setEditing(false);
+    } finally {
+      setBusy(false);
     }
-  };
+  }
 
-  const handleImport = () => {
+  async function handleDelete() {
+    if (!confirm(`「${item.name}」を削除しますか？`)) return;
+    setBusy(true);
     try {
-      const parsed = parseHtmlImport(html, winBase, macBase);
-      if (parsed.length === 0) {
-        setError("セクションが見つかりませんでした（div.section > h2 + a）");
-        return;
-      }
-      const source: LocalImportSource | null = htmlPath.trim()
-        ? { htmlPath: htmlPath.trim(), winBase, macBase }
-        : null;
-      onImport(parsed, source, mode);
-    } catch (e) {
-      setError(String(e));
+      await onDelete();
+    } finally {
+      setBusy(false);
     }
-  };
+  }
+
+  if (editing) {
+    return (
+      <li className="local-item editing">
+        <input
+          value={icon}
+          onChange={(e) => setIcon(e.target.value)}
+          maxLength={4}
+          style={{ width: 40 }}
+        />
+        <input value={name} onChange={(e) => setName(e.target.value)} />
+        <input value={target} onChange={(e) => setTarget(e.target.value)} />
+        <button onClick={handleSave} disabled={busy}>
+          保存
+        </button>
+        <button onClick={() => setEditing(false)} disabled={busy}>
+          取消
+        </button>
+      </li>
+    );
+  }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>📥 HTMLインポート</h2>
-
-        <div className="form-group">
-          <label>HTMLファイル（📂 選択するとパスと内容を自動セット）</label>
-          <div style={{ display: "flex", gap: 4 }}>
-            <input
-              value={htmlPath}
-              onChange={(e) => setHtmlPath(e.target.value)}
-              placeholder="ファイル選択 or パス直接入力"
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={handlePickFile}
-              disabled={loading}
-              title="ファイル選択ダイアログを開く"
-            >
-              📂 選択
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={handleLoadFile}
-              disabled={!htmlPath.trim() || loading}
-              title="現在のパスから内容を読み込む"
-            >
-              {loading ? "⏳" : "読込"}
-            </button>
-          </div>
-          <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4 }}>
-            このパスを保存しておくと、以後「🔄 ファイル更新」ボタンで再読込できます
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>HTMLソース（貼り付けでもOK）</label>
-          <textarea
-            value={html}
-            onChange={(e) => setHtml(e.target.value)}
-            rows={6}
-            placeholder={"<div class=\"section\">...</div>"}
-            style={{ width: "100%", fontFamily: "monospace", fontSize: 11 }}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>パス置換（Windows → Mac）</label>
-          <input
-            value={winBase}
-            onChange={(e) => setWinBase(e.target.value)}
-            placeholder="From (Windows base)"
-          />
-          <input
-            value={macBase}
-            onChange={(e) => setMacBase(e.target.value)}
-            placeholder="To (Mac base)"
-            style={{ marginTop: 4 }}
-          />
-          <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4 }}>
-            空欄なら置換なし。From で始まるパスだけ To に書き換えます
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>取り込み方法</label>
-          <div className="theme-grid">
-            <button
-              type="button"
-              className={`theme-btn ${mode === "append" ? "active" : ""}`}
-              onClick={() => setMode("append")}
-            >
-              既存に追加
-            </button>
-            <button
-              type="button"
-              className={`theme-btn ${mode === "replace" ? "active" : ""}`}
-              onClick={() => setMode("replace")}
-            >
-              既存を置換
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div style={{ color: "#c00", fontSize: 11, marginTop: 8 }}>
-            {error}
-          </div>
-        )}
-        <div className="modal-actions">
-          <button type="button" className="btn-save" onClick={handleImport}>
-            インポート
-          </button>
-          <button type="button" className="btn-cancel" onClick={onClose}>
-            キャンセル
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AddSectionModal({
-  onClose,
-  onAdd,
-}: {
-  onClose: () => void;
-  onAdd: (title: string) => void;
-}) {
-  const [title, setTitle] = useState("");
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>＋ セクション追加</h2>
-        <div className="form-group">
-          <label>セクションタイトル</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="例: 🗂 フォルダを開く"
-            autoFocus
-          />
-        </div>
-        <div className="modal-actions">
-          <button
-            type="button"
-            className="btn-save"
-            disabled={!title.trim()}
-            onClick={() => onAdd(title.trim())}
-          >
-            追加
-          </button>
-          <button type="button" className="btn-cancel" onClick={onClose}>
-            キャンセル
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AddLinkModal({
-  onClose,
-  onAdd,
-}: {
-  onClose: () => void;
-  onAdd: (label: string, path: string) => void;
-}) {
-  const [label, setLabel] = useState("");
-  const [path, setPath] = useState("");
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>＋ ボタン追加</h2>
-        <div className="form-group">
-          <label>ラベル</label>
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="例: CP カルテ一覧"
-            autoFocus
-          />
-        </div>
-        <div className="form-group">
-          <label>パス（ファイル or フォルダの絶対パス）</label>
-          <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="/Users/.../MyBrain/..."
-          />
-        </div>
-        <div className="modal-actions">
-          <button
-            type="button"
-            className="btn-save"
-            disabled={!label.trim() || !path.trim()}
-            onClick={() => onAdd(label.trim(), path.trim())}
-          >
-            追加
-          </button>
-          <button type="button" className="btn-cancel" onClick={onClose}>
-            キャンセル
-          </button>
-        </div>
-      </div>
-    </div>
+    <li className="local-item">
+      <button
+        className="local-item-link"
+        onClick={onOpen}
+        title={item.target}
+      >
+        <span className="icon">
+          {item.icon ?? (item.targetType === "URL" ? "🔗" : "📄")}
+        </span>
+        <span className="name">{item.name}</span>
+      </button>
+      <button
+        onClick={() => setEditing(true)}
+        className="icon-btn-slim"
+        title="編集"
+      >
+        ✎
+      </button>
+      <button
+        onClick={handleDelete}
+        className="icon-btn-slim"
+        title="削除"
+        disabled={busy}
+      >
+        🗑
+      </button>
+    </li>
   );
 }

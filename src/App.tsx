@@ -1,606 +1,475 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+// Work Launcher V1.0 メイン
+// データソース: useLauncherData（API+cache）/ ローカル設定: work-launcher.json
+// 認証: Keycloak Pattern D（Custom URL Scheme）
+// 設計書: MyBrain/20_Projects/Work Launcher/設計書 v0.4
+
+import { useState, useEffect, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-shell";
-import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
-import type { LauncherItem, Memo, Task, AppData, ThemeName, CalendarSettings, Preferences, TabName, StartupSize, LocalSection, LocalImportSource } from "./types";
-import { DEFAULT_APP_DATA, DEFAULT_PREFERENCES } from "./types";
-import ItemCard from "./ItemCard";
-import EditModal from "./EditModal";
+import {
+  readTextFile,
+  exists,
+  writeTextFile,
+  mkdir,
+  BaseDirectory,
+} from "@tauri-apps/plugin-fs";
+import type {
+  AppData,
+  ThemeName,
+  CalendarSettings,
+  Preferences,
+  TabName,
+} from "./types";
+import { DEFAULT_PREFERENCES } from "./types";
+
 import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
 import LocalTab from "./LocalTab";
-import CalendarTab, { toUtcDate, formatDateLabel, formatTime } from "./CalendarTab";
-import type { CalendarEvent } from "./CalendarTab";
-import { kcLogin, kcLogout, kcSilentLogin, onLoginSuccess, type TokenSet } from "./auth/keycloak";
+import {
+  kcLogin,
+  kcLogout,
+  kcSilentLogin,
+  onLoginSuccess,
+  type TokenSet,
+} from "./auth/keycloak";
+import { useLauncherData } from "./hooks/useLauncherData";
+import {
+  apiCreateSection,
+  apiUpdateSection,
+  apiDeleteSection,
+  apiCreateItem,
+  apiUpdateItem,
+  apiDeleteItem,
+  apiTouchItem,
+  apiCreateMemo,
+  apiUpdateMemo,
+  apiDeleteMemo,
+  apiCreateTask,
+  apiUpdateTask,
+  apiDeleteTask,
+} from "./api/launcher-api";
+import { clearCache } from "./cache/launcher-cache";
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/kengoozeki2fc-arch/quick-launcher/releases/latest";
-const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000; // 1時間
+const ADMIN_CONSOLE_URL = "https://admin.id.kensetsu-total.support";
+const APP_DATA_FILE = "work-launcher/app.json";
+const APP_DATA_DIR = "work-launcher";
+const FS_OPTS = { baseDir: BaseDirectory.AppLocalData } as const;
 
-const PAGE_SIZE = 5;
-const PATH_KEY = "wl_data_path";
-const LEGACY_DATA = "quick-launcher-data.json";
-const LEGACY_MEMO = "quick-launcher-memos.json";
-const LEGACY_TASK = "quick-launcher-tasks.json";
-const LEGACY_CAL = "quick-launcher-calendar.json";
-
-const THEMES: { name: ThemeName; label: string; emoji: string }[] = [
-  { name: "pink", label: "ピンク", emoji: "🌸" },
-  { name: "blue", label: "空色", emoji: "🌤" },
-  { name: "black", label: "ブラック", emoji: "🖤" },
-  { name: "white", label: "ホワイト", emoji: "🤍" },
-];
-
-const TABS: { name: TabName; label: string }[] = [
-  { name: "calendar", label: "📅 カレンダー" },
-  { name: "task", label: "✅ タスク" },
-  { name: "launcher", label: "🚀 サイト" },
-  { name: "memo", label: "📝 メモ" },
-  { name: "local", label: "📁 ローカル" },
-];
-
-const SIZES: { name: StartupSize; label: string; size: [number, number] }[] = [
-  { name: "compact", label: "コンパクト (400×520)", size: [400, 520] },
-  { name: "normal", label: "通常 (540×800)", size: [540, 800] },
-];
-
-const COMPACT_SIZE = [400, 520] as const;
-const NORMAL_SIZE = [540, 800] as const;
-
-async function loadAppData(path: string): Promise<{ data: AppData; migrated: boolean }> {
-  // 既存ファイルを試す
-  try {
-    const raw = await invoke<string>("read_file_abs", { path });
-    if (raw && raw.trim().length > 0) {
-      const parsed = JSON.parse(raw) as Partial<AppData>;
-      return {
-        data: {
-          ...DEFAULT_APP_DATA,
-          ...parsed,
-          preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
-        },
-        migrated: false,
-      };
-    }
-  } catch {
-    // fall through to migration
-  }
-
-  // マイグレーション: 旧4ファイルをDesktopから読み込み
-  const data: AppData = { ...DEFAULT_APP_DATA };
-  let didMigrate = false;
-  for (const [file, key] of [
-    [LEGACY_DATA, "items"],
-    [LEGACY_MEMO, "memos"],
-    [LEGACY_TASK, "tasks"],
-  ] as const) {
-    try {
-      if (await exists(file, { baseDir: BaseDirectory.Desktop })) {
-        const raw = await readTextFile(file, { baseDir: BaseDirectory.Desktop });
-        (data as unknown as Record<string, unknown>)[key] = JSON.parse(raw);
-        didMigrate = true;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  try {
-    if (await exists(LEGACY_CAL, { baseDir: BaseDirectory.Desktop })) {
-      const raw = await readTextFile(LEGACY_CAL, { baseDir: BaseDirectory.Desktop });
-      const cal = JSON.parse(raw);
-      if (cal?.accessToken) {
-        data.calendar = cal;
-        didMigrate = true;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return { data, migrated: didMigrate };
-}
-
-async function saveAppData(path: string, data: AppData) {
-  await invoke("write_file_abs", { path, content: JSON.stringify(data, null, 2) });
-}
-
-async function msGet(url: string, accessToken: string): Promise<Record<string, unknown>> {
-  const raw = await invoke<string>("http_get", { url, accessToken });
-  return JSON.parse(raw);
-}
-
-async function msPost(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
-  const raw = await invoke<string>("http_post", { url, params });
-  return JSON.parse(raw);
-}
-
-function useCompactMode(): boolean {
-  const [compact, setCompact] = useState(() =>
-    typeof window !== "undefined" && (window.innerWidth < 420 || window.innerHeight < 560)
-  );
-  useEffect(() => {
-    const onResize = () => setCompact(window.innerWidth < 420 || window.innerHeight < 560);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return compact;
-}
-
+// ============================================================
+// メイン
+// ============================================================
 export default function App() {
-  const [dataPath, setDataPath] = useState<string>("");
-  const [tab, setTab] = useState<TabName>("calendar");
-  const [notification, setNotification] = useState<string | null>(null);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const compact = useCompactMode();
-
-  const [items, setItems] = useState<LauncherItem[]>([]);
-  const [memos, setMemos] = useState<Memo[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
+  // ローカル設定
   const [theme, setTheme] = useState<ThemeName>("pink");
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
-  const [localSections, setLocalSections] = useState<LocalSection[]>([]);
-  const [localImportSource, setLocalImportSource] = useState<LocalImportSource | undefined>(undefined);
+  const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
+  const dataLoadedRef = useRef(false);
 
-  const [editingItem, setEditingItem] = useState<LauncherItem | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  // UI 状態
+  const [tab, setTab] = useState<TabName>("calendar");
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
 
-  // Calendar events (App.tsxで管理してコンパクト表示にも使う)
-  const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
-  const [tomorrowEvents, setTomorrowEvents] = useState<CalendarEvent[]>([]);
-  const [calLoading, setCalLoading] = useState(false);
-  const [calError, setCalError] = useState<string | null>(null);
-
-  // バージョン監視
+  // バージョン情報
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("");
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
-  // Pattern D 統合認証（Keycloak）
+  // 認証
   const [kcUser, setKcUser] = useState<TokenSet | null>(null);
+
+  // データ供給（ログイン中のみ実行）
+  const {
+    state: launcher,
+    sync,
+    setSections,
+    setMemos,
+    setTasks,
+  } = useLauncherData(!!kcUser);
+
+  // ============================================================
+  // 認証
+  // ============================================================
   useEffect(() => {
-    // 起動時の silent login（refresh_tokenで無音再認証）
     kcSilentLogin()
-      .then((ts) => { if (ts) setKcUser(ts); })
+      .then((ts) => {
+        if (ts) setKcUser(ts);
+      })
       .catch((e) => console.warn("kcSilentLogin failed:", e));
-    // deep-link callback でログイン完了したら通知を受ける
     const off = onLoginSuccess((ts) => setKcUser(ts));
     return off;
   }, []);
+
   const handleKcLogin = useCallback(async () => {
-    try { await kcLogin(); } catch (e) { console.error("kcLogin:", e); }
+    try {
+      await kcLogin();
+    } catch (e) {
+      console.error("kcLogin:", e);
+      setNotification(`ログイン失敗: ${e}`);
+    }
   }, []);
+
   const handleKcLogout = useCallback(async () => {
-    try { await kcLogout(); setKcUser(null); } catch (e) { console.error("kcLogout:", e); }
+    try {
+      await kcLogout();
+    } catch (e) {
+      console.warn("kcLogout:", e);
+    }
+    await clearCache();
+    setKcUser(null);
   }, []);
 
-  const loaded = useRef(false);
-
-  // 初回ロード
+  // ============================================================
+  // ローカル設定 ロード/保存
+  // ============================================================
   useEffect(() => {
     (async () => {
-      let path = localStorage.getItem(PATH_KEY) ?? "";
-      if (!path) {
-        try {
-          path = await invoke<string>("default_data_path");
-        } catch {
-          path = "";
-        }
-      }
-      setDataPath(path);
-      const { data, migrated } = await loadAppData(path);
-      setItems(data.items);
-      setMemos(data.memos);
-      // 完了日が昨日以前のタスクは物理削除（翌日になったら自動で消える）
-      const n = new Date();
-      const todayStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-      const prunedTasks = data.tasks.filter((t) => {
-        if (!t.done) return true;
-        // 旧データ（completedAt なし）は今日完了したものとして扱う
-        if (!t.completedAt) return true;
-        return t.completedAt >= todayStr;
-      });
-      // 旧データに今日のcompletedAtを補完
-      const normalizedTasks = prunedTasks.map((t) =>
-        t.done && !t.completedAt ? { ...t, completedAt: todayStr } : t
-      );
-      setTasks(normalizedTasks);
-      setCalendar(data.calendar);
-      setTheme(data.theme ?? "pink");
-      setLocalSections(data.localSections ?? []);
-      setLocalImportSource(data.localImportSource);
-      const prefs = { ...DEFAULT_PREFERENCES, ...(data.preferences ?? {}) };
-      setPreferences(prefs);
-      setTab(prefs.startupTab);
       try {
-        const [w, h] = prefs.startupSize === "compact" ? COMPACT_SIZE : NORMAL_SIZE;
-        await getCurrentWindow().setSize(new LogicalSize(w, h));
-      } catch (e) {
-        console.error("startup resize failed", e);
-      }
-      loaded.current = true;
-      if (migrated) {
-        // 即保存して統合JSONを生成
-        try {
-          await saveAppData(path, data);
-          setNotification("既存データを統合JSONに移行しました");
-        } catch (e) {
-          console.error(e);
+        if (!(await exists(APP_DATA_DIR, FS_OPTS))) {
+          await mkdir(APP_DATA_DIR, { ...FS_OPTS, recursive: true });
         }
-      }
-    })();
-  }, []);
-
-  // テーマ反映
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  // 自動保存
-  useEffect(() => {
-    if (!loaded.current || !dataPath) return;
-    const data: AppData = { version: 1, items, memos, tasks, calendar, theme, preferences, localSections, localImportSource };
-    saveAppData(dataPath, data).catch((e) => console.error("save failed", e));
-  }, [items, memos, tasks, calendar, theme, preferences, localSections, localImportSource, dataPath]);
-
-  // 検索でページリセット
-  useEffect(() => {
-    setPage(1);
-  }, [search]);
-
-  // ローカルタブが非表示化されたら別タブへ退避
-  useEffect(() => {
-    if (!preferences.showLocalTab && tab === "local") setTab("calendar");
-  }, [preferences.showLocalTab, tab]);
-
-  // タスク通知チェック（1分ごと）
-  useEffect(() => {
-    const check = () => {
-      setTasks((prev) => {
-        const now = new Date();
-        return prev.map((task) => {
-          if (task.done || task.notified) return task;
-          const deadline = new Date(`${task.date}T${task.time}:00`);
-          const diffMs = deadline.getTime() - now.getTime();
-          if (diffMs > 0 && diffMs <= 60 * 60 * 1000) {
-            setNotification(`⏰ 「${task.title}」の期限まであと1時間以内です`);
-            return { ...task, notified: true };
+        if (await exists(APP_DATA_FILE, FS_OPTS)) {
+          const text = await readTextFile(APP_DATA_FILE, FS_OPTS);
+          const data = JSON.parse(text) as Partial<AppData>;
+          if (data.calendar) setCalendar(data.calendar);
+          if (data.theme) setTheme(data.theme);
+          if (data.preferences) {
+            setPreferences({ ...DEFAULT_PREFERENCES, ...data.preferences });
+            setTab(
+              data.preferences.startupTab ?? DEFAULT_PREFERENCES.startupTab,
+            );
           }
-          return task;
-        });
-      });
-    };
-    check();
-    const id = setInterval(check, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Calendar fetch
-  const refreshAccessToken = useCallback(async (s: CalendarSettings): Promise<CalendarSettings | null> => {
-    try {
-      const data = await msPost(
-        `https://login.microsoftonline.com/${s.tenantId}/oauth2/v2.0/token`,
-        {
-          client_id: s.clientId,
-          grant_type: "refresh_token",
-          refresh_token: s.refreshToken,
-          scope: "Calendars.Read offline_access",
         }
-      );
-      if (data.access_token) {
-        const updated: CalendarSettings = {
-          ...s,
-          accessToken: data.access_token as string,
-          refreshToken: (data.refresh_token as string) ?? s.refreshToken,
-          tokenExpiry: Date.now() + (data.expires_in as number) * 1000,
-        };
-        setCalendar(updated);
-        return updated;
+      } catch (e) {
+        console.warn("local data load:", e);
+      } finally {
+        dataLoadedRef.current = true;
       }
-      return null;
-    } catch {
-      return null;
-    }
+    })();
   }, []);
 
-  const fetchEvents = useCallback(async (s: CalendarSettings) => {
-    setCalLoading(true);
-    setCalError(null);
-    let cur = s;
-    if (Date.now() > s.tokenExpiry - 5 * 60 * 1000) {
-      const refreshed = await refreshAccessToken(s);
-      if (!refreshed) {
-        setCalError("トークンの更新に失敗しました。再接続してください。");
-        setCalLoading(false);
-        return;
-      }
-      cur = refreshed;
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const afterTomorrow = new Date(today);
-    afterTomorrow.setDate(afterTomorrow.getDate() + 2);
-    try {
-      const data = await msGet(
-        `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location&$orderby=start/dateTime&$top=50`,
-        cur.accessToken
-      );
-      if (data.error) {
-        const err = data.error as Record<string, unknown>;
-        setCalError(`取得エラー: ${err.message ?? JSON.stringify(data.error)}`);
-        setCalLoading(false);
-        return;
-      }
-      const events = (data.value as CalendarEvent[]) ?? [];
-      const todayStr = formatDateLabel(today);
-      const tomorrowDate = new Date(today);
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-      const tomorrowStr = formatDateLabel(tomorrowDate);
-      setTodayEvents(events.filter((e) => formatDateLabel(toUtcDate(e.start.dateTime)) === todayStr));
-      setTomorrowEvents(events.filter((e) => formatDateLabel(toUtcDate(e.start.dateTime)) === tomorrowStr));
-    } catch (err) {
-      setCalError(`カレンダーの取得に失敗しました: ${err}`);
-    } finally {
-      setCalLoading(false);
-    }
-  }, [refreshAccessToken]);
-
-  // calendar settings ロード後 / 変更後にfetch
   useEffect(() => {
-    if (loaded.current && calendar?.accessToken) {
-      fetchEvents(calendar);
-    } else {
-      setTodayEvents([]);
-      setTomorrowEvents([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendar?.accessToken, calendar?.tenantId, calendar?.clientId]);
+    if (!dataLoadedRef.current) return;
+    (async () => {
+      try {
+        const data: AppData = {
+          version: 2,
+          calendar,
+          theme,
+          preferences,
+        };
+        await writeTextFile(APP_DATA_FILE, JSON.stringify(data), FS_OPTS);
+      } catch (e) {
+        console.warn("local data save:", e);
+      }
+    })();
+  }, [calendar, theme, preferences]);
 
-  // GitHubバージョンチェック
-  const checkForUpdate = useCallback(async () => {
-    try {
-      const raw = await invoke<string>("http_get_public", { url: GITHUB_RELEASES_URL });
-      const data = JSON.parse(raw);
-      const tag = (data.tag_name as string)?.replace(/^v/, "");
-      if (tag) setLatestVersion(tag);
-    } catch {
-      // ネットワークエラーは無視
-    }
+  // ============================================================
+  // ウィンドウサイズ切替
+  // ============================================================
+  const handleMinimize = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(400, 520));
   }, []);
 
-  // 起動時: バージョン取得＆チェック
+  const handleToggleMaximize = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(540, 800));
+  }, []);
+
+  // ============================================================
+  // アップデートチェック
+  // ============================================================
   useEffect(() => {
     (async () => {
       try {
-        const ver = await getVersion();
-        setCurrentVersion(ver);
-      } catch {
-        // fallback
-      }
+        const v = await getVersion();
+        setCurrentVersion(v);
+      } catch {}
     })();
-    checkForUpdate();
-  }, [checkForUpdate]);
-
-  // 1時間ごと自動更新（カレンダー＋バージョンチェック）
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (calendar?.accessToken) {
-        fetchEvents(calendar);
-      }
-      checkForUpdate();
-    }, AUTO_REFRESH_INTERVAL);
-    return () => clearInterval(id);
-  }, [calendar, fetchEvents, checkForUpdate]);
-
-  // 更新通知判定
-  const hasUpdate = useMemo(() => {
-    if (!currentVersion || !latestVersion || updateDismissed) return false;
-    return latestVersion !== currentVersion;
-  }, [currentVersion, latestVersion, updateDismissed]);
-
-  // Launcher
-  const filtered = useMemo(() => {
-    if (!search.trim()) return items;
-    const q = search.toLowerCase();
-    return items.filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.url.toLowerCase().includes(q) ||
-        i.loginId.toLowerCase().includes(q)
-    );
-  }, [items, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
-  const handleAdd = () => {
-    setEditingItem(null);
-    setShowModal(true);
-  };
-  const handleEdit = (item: LauncherItem) => {
-    setEditingItem(item);
-    setShowModal(true);
-  };
-  const handleSave = (item: LauncherItem) => {
-    setItems((prev) => {
-      const idx = prev.findIndex((i) => i.id === item.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = item;
-        return updated;
-      }
-      return [...prev, item];
-    });
-    setShowModal(false);
-  };
-  const handleDelete = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id));
-  };
-  const handleOpen = useCallback(async (url: string) => {
-    try {
-      await open(url);
-    } catch {
-      window.open(url, "_blank");
-    }
-  }, []);
-
-  const handleMemoSave = (memo: Memo) => {
-    setMemos((prev) => {
-      const idx = prev.findIndex((m) => m.id === memo.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = memo;
-        return updated;
-      }
-      return [memo, ...prev];
-    });
-  };
-  const handleMemoDelete = (id: string) => setMemos((prev) => prev.filter((m) => m.id !== id));
-
-  const handleTaskSave = (task: Task) => {
-    setTasks((prev) => {
-      const idx = prev.findIndex((t) => t.id === task.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = task;
-        return updated;
-      }
-      return [task, ...prev];
-    });
-  };
-  const handleTaskToggle = (id: string) =>
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== id) return t;
-        const nextDone = !t.done;
-        if (nextDone) {
-          const n = new Date();
-          const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-          return { ...t, done: true, completedAt: today };
+    const checkLatest = async () => {
+      try {
+        const res = await fetch(
+          "https://api.github.com/repos/kengoozeki2fc-arch/quick-launcher/releases/latest",
+        );
+        if (!res.ok) return;
+        const json = (await res.json()) as { tag_name?: string };
+        if (json.tag_name) {
+          setLatestVersion(json.tag_name.replace(/^v/, ""));
         }
-        return { ...t, done: false, completedAt: undefined };
-      })
-    );
-  const handleTaskDelete = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id));
-
-  const handleCalendarChange = (s: CalendarSettings | null) => setCalendar(s);
-
-  // 「−」コンパクト表示へ縮小
-  const handleMinimize = useCallback(async () => {
-    try {
-      await getCurrentWindow().setSize(new LogicalSize(...COMPACT_SIZE));
-    } catch (e) {
-      console.error("compact resize failed", e);
-    }
+      } catch {}
+    };
+    checkLatest();
+    const id = window.setInterval(checkLatest, 60 * 60 * 1000);
+    return () => window.clearInterval(id);
   }, []);
 
-  // 「□」通常サイズへ拡大
-  const handleToggleMaximize = useCallback(async () => {
-    try {
-      await getCurrentWindow().setSize(new LogicalSize(...NORMAL_SIZE));
-    } catch (e) {
-      console.error("expand resize failed", e);
-    }
-  }, []);
+  const hasUpdate =
+    !!latestVersion &&
+    !!currentVersion &&
+    latestVersion !== currentVersion &&
+    !updateDismissed;
 
-  // ---------- コンパクト表示 ----------
-  if (compact) {
-    const cutoff = Date.now() - 60 * 60 * 1000;
-    const upcomingEvents = todayEvents
-      .filter((ev) => ev.isAllDay || toUtcDate(ev.end.dateTime).getTime() >= cutoff)
-      .slice(0, 3);
-    const upcomingTasks = tasks.filter((t) => !t.done).slice(0, 3);
-    return (
-      <div className="app compact" data-theme={theme}>
-        {hasUpdate && (
-          <div className="update-banner" onClick={() => open(`https://github.com/kengoozeki2fc-arch/quick-launcher/releases/tag/v${latestVersion}`)}>
-            新しいバージョン v{latestVersion} が利用可能です（現在 v{currentVersion}）
-            <span className="notif-close" onClick={(e) => { e.stopPropagation(); setUpdateDismissed(true); }}>✕</span>
-          </div>
-        )}
-        {notification && (
-          <div className="notification-banner" onClick={() => setNotification(null)}>
-            {notification}
-            <span className="notif-close">✕</span>
-          </div>
-        )}
-        <div className="compact-header">
-          <h1>Work Launcher</h1>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button className="icon-btn icon-btn-slim" onClick={handleMinimize} title="最小化">−</button>
-            <button className="icon-btn icon-btn-slim" onClick={handleToggleMaximize} title="最大化">□</button>
-            <button
-              className="icon-btn"
-              onClick={() => setShowSettingsModal(true)}
-              title="設定"
-            >⚙</button>
-          </div>
-        </div>
-
-        <div className="compact-section">
-          <div className="compact-section-title">📅 今日の予定</div>
-          {upcomingEvents.length === 0 ? (
-            <div className="compact-empty">予定なし</div>
-          ) : (
-            upcomingEvents.map((ev) => (
-              <div key={ev.id} className="compact-event">
-                <span className="compact-event-time">
-                  {ev.isAllDay ? "終日" : formatTime(ev.start.dateTime)}
-                </span>
-                <span className="compact-event-title">{ev.subject}</span>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="compact-section">
-          <div className="compact-section-title">✅ タスク</div>
-          {upcomingTasks.length === 0 ? (
-            <div className="compact-empty">タスクなし</div>
-          ) : (
-            upcomingTasks.map((t) => (
-              <div key={t.id} className="compact-task">
-                <input
-                  type="checkbox"
-                  checked={t.done}
-                  onChange={() => handleTaskToggle(t.id)}
-                />
-                <span className="compact-task-title">{t.title}</span>
-                <span className="compact-task-time">{t.time}</span>
-              </div>
-            ))
-          )}
-        </div>
-
-        {showSettingsModal && (
-          <SettingsModal
-            dataPath={dataPath}
-            theme={theme}
-            preferences={preferences}
-            onPathChange={(p) => {
-              setDataPath(p);
-              localStorage.setItem(PATH_KEY, p);
-            }}
-            onThemeChange={setTheme}
-            onPreferencesChange={setPreferences}
-            onClose={() => setShowSettingsModal(false)}
-          />
-        )}
-      </div>
-    );
+  // ============================================================
+  // Mutators（楽観的UI + API送信 + 失敗時 sync）
+  // ============================================================
+  function reportError(e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setNotification(`エラー: ${msg}`);
+    sync().catch(() => {});
   }
 
-  // ---------- 通常表示 ----------
+  // Sections
+  const onCreateSection = useCallback(
+    async (input: { name: string; type?: string; color?: string }) => {
+      try {
+        const sec = await apiCreateSection(input);
+        setSections((prev) => [...prev, { ...sec, items: [] }]);
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+  const onUpdateSection = useCallback(
+    async (
+      id: string,
+      patch: Partial<{ name: string; color: string; type: string }>,
+    ) => {
+      try {
+        const sec = await apiUpdateSection(id, patch);
+        setSections((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, ...sec, items: s.items } : s,
+          ),
+        );
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+  const onDeleteSection = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteSection(id);
+        setSections((prev) => prev.filter((s) => s.id !== id));
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+
+  // Items
+  const onCreateItem = useCallback(
+    async (input: {
+      sectionId: string;
+      name: string;
+      target: string;
+      targetType?: "URL" | "FILE_LOCAL";
+      icon?: string;
+    }) => {
+      try {
+        const item = await apiCreateItem(input);
+        setSections((prev) =>
+          prev.map((s) =>
+            s.id === input.sectionId
+              ? { ...s, items: [...s.items, item] }
+              : s,
+          ),
+        );
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+  const onUpdateItem = useCallback(
+    async (
+      id: string,
+      patch: Partial<{
+        name: string;
+        target: string;
+        targetType: "URL" | "FILE_LOCAL";
+        icon: string | null;
+      }>,
+    ) => {
+      try {
+        const item = await apiUpdateItem(id, patch);
+        setSections((prev) =>
+          prev.map((s) => ({
+            ...s,
+            items: s.items.map((i) => (i.id === id ? { ...i, ...item } : i)),
+          })),
+        );
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+  const onDeleteItem = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteItem(id);
+        setSections((prev) =>
+          prev.map((s) => ({
+            ...s,
+            items: s.items.filter((i) => i.id !== id),
+          })),
+        );
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+  const onTouchItem = useCallback(async (id: string) => {
+    try {
+      await apiTouchItem(id);
+    } catch (e) {
+      console.warn("touch failed:", e);
+    }
+  }, []);
+
+  // Memos
+  const onCreateMemo = useCallback(
+    async (input: { title?: string; content: string }) => {
+      try {
+        const memo = await apiCreateMemo(input);
+        setMemos((prev) => [...prev, memo]);
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setMemos, sync],
+  );
+  const onUpdateMemo = useCallback(
+    async (
+      id: string,
+      patch: { title?: string | null; content?: string },
+    ) => {
+      try {
+        const memo = await apiUpdateMemo(id, patch);
+        setMemos((prev) => prev.map((m) => (m.id === id ? memo : m)));
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setMemos, sync],
+  );
+  const onDeleteMemo = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteMemo(id);
+        setMemos((prev) => prev.filter((m) => m.id !== id));
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setMemos, sync],
+  );
+
+  // Tasks
+  const onCreateTask = useCallback(
+    async (input: {
+      title: string;
+      dueDate?: string | null;
+      isAllDay?: boolean;
+    }) => {
+      try {
+        const task = await apiCreateTask(input);
+        setTasks((prev) => [...prev, task]);
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setTasks, sync],
+  );
+  const onUpdateTask = useCallback(
+    async (
+      id: string,
+      patch: {
+        title?: string;
+        dueDate?: string | null;
+        isAllDay?: boolean;
+        completedAt?: string | null;
+      },
+    ) => {
+      try {
+        const task = await apiUpdateTask(id, patch);
+        setTasks((prev) => prev.map((t) => (t.id === id ? task : t)));
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setTasks, sync],
+  );
+  const onDeleteTask = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteTask(id);
+        setTasks((prev) => prev.filter((t) => t.id !== id));
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setTasks, sync],
+  );
+
+  // ============================================================
+  // 同期ボタン
+  // ============================================================
+  const handleSync = useCallback(async () => {
+    setNotification("同期中…");
+    await sync();
+    setNotification(null);
+  }, [sync]);
+
+  // ============================================================
+  // 設定モーダル: Web で編集
+  // ============================================================
+  const handleOpenAdminConsole = useCallback(() => {
+    open(`${ADMIN_CONSOLE_URL}/admin/work-launcher`).catch((e) =>
+      console.error(e),
+    );
+  }, []);
+
+  // ============================================================
+  // Render
+  // ============================================================
+  const tabs: { key: TabName; label: string }[] = [
+    { key: "calendar", label: "📅" },
+    { key: "task", label: "✅" },
+    { key: "memo", label: "📝" },
+    { key: "local", label: "📁" },
+  ];
+
   return (
     <div className="app" data-theme={theme}>
       {hasUpdate && (
-        <div className="update-banner" onClick={() => open(`https://github.com/kengoozeki2fc-arch/quick-launcher/releases/tag/v${latestVersion}`)}>
-          新しいバージョン v{latestVersion} が利用可能です（現在 v{currentVersion}）
-          <span className="notif-close" onClick={(e) => { e.stopPropagation(); setUpdateDismissed(true); }}>✕</span>
+        <div
+          className="update-banner"
+          onClick={() =>
+            open(
+              `https://github.com/kengoozeki2fc-arch/quick-launcher/releases/tag/v${latestVersion}`,
+            )
+          }
+        >
+          新しいバージョン v{latestVersion} が利用可能です（現在 v
+          {currentVersion}）
+          <span
+            className="notif-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              setUpdateDismissed(true);
+            }}
+          >
+            ✕
+          </span>
         </div>
       )}
       {notification && (
@@ -610,20 +479,28 @@ export default function App() {
         </div>
       )}
 
+      {/* ヘッダ */}
       <div className="header">
         <h1>Work Launcher</h1>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {tab === "launcher" && (
-            <button className="add-btn" onClick={handleAdd}>+ 追加</button>
-          )}
           {kcUser ? (
-            <button
-              className="icon-btn icon-btn-slim"
-              onClick={handleKcLogout}
-              title={`ログイン中: ${kcUser.email ?? "認証済"}（クリックでログアウト）`}
-            >
-              🔓
-            </button>
+            <>
+              <button
+                className="icon-btn icon-btn-slim"
+                onClick={handleSync}
+                title="同期"
+                disabled={launcher.loading}
+              >
+                {launcher.loading ? "⏳" : "🔄"}
+              </button>
+              <button
+                className="icon-btn icon-btn-slim"
+                onClick={handleKcLogout}
+                title={`ログイン中: ${kcUser.email ?? "認証済"}（クリックでログアウト）`}
+              >
+                🔓
+              </button>
+            </>
           ) : (
             <button
               className="icon-btn icon-btn-slim"
@@ -633,294 +510,248 @@ export default function App() {
               🔐
             </button>
           )}
-          <button className="icon-btn icon-btn-slim" onClick={handleMinimize} title="最小化">−</button>
-          <button className="icon-btn icon-btn-slim" onClick={handleToggleMaximize} title="最大化">□</button>
-          <button className="icon-btn" onClick={() => setShowSettingsModal(true)} title="設定">⚙</button>
-        </div>
-      </div>
-
-      {tab === "launcher" && (
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="検索（タイトル・URL・ID）"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="search-clear" onClick={() => setSearch("")}>✕</button>
-          )}
-        </div>
-      )}
-
-      <div className="tabs">
-        <button
-          className={`tab-btn ${tab === "calendar" ? "active" : ""}`}
-          onClick={() => setTab("calendar")}
-        >
-          📅 カレンダー
-        </button>
-        <button
-          className={`tab-btn ${tab === "task" ? "active" : ""}`}
-          onClick={() => setTab("task")}
-        >
-          ✅ タスク
-          {tasks.filter((t) => !t.done).length > 0 && (
-            <span className="tab-badge">{tasks.filter((t) => !t.done).length}</span>
-          )}
-        </button>
-        <button
-          className={`tab-btn ${tab === "launcher" ? "active" : ""}`}
-          onClick={() => setTab("launcher")}
-        >
-          🚀 サイト
-        </button>
-        <button
-          className={`tab-btn ${tab === "memo" ? "active" : ""}`}
-          onClick={() => setTab("memo")}
-        >
-          📝 メモ
-        </button>
-        {preferences.showLocalTab && (
           <button
-            className={`tab-btn ${tab === "local" ? "active" : ""}`}
-            onClick={() => setTab("local")}
+            className="icon-btn icon-btn-slim"
+            onClick={handleMinimize}
+            title="最小化"
           >
-            📁 ローカル
+            −
           </button>
-        )}
+          <button
+            className="icon-btn icon-btn-slim"
+            onClick={handleToggleMaximize}
+            title="最大化"
+          >
+            □
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setShowSettingsModal(true)}
+            title="設定"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
 
-      {tab === "launcher" && (
+      {!kcUser ? (
+        <NotLoggedInPanel onLogin={handleKcLogin} />
+      ) : (
         <>
-          <div className="status-bar">
-            全 {filtered.length} 件
-            {search && ` （${items.length} 件中）`}
+          {/* タブ */}
+          <div className="tabs">
+            {tabs.map((t) => {
+              if (t.key === "local" && !preferences.showLocalTab) return null;
+              return (
+                <button
+                  key={t.key}
+                  className={`tab-btn ${tab === t.key ? "active" : ""}`}
+                  onClick={() => setTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
-          {pageItems.length === 0 ? (
-            <div className="empty-state">
-              <p style={{ fontSize: 32 }}>🚀</p>
-              <p>{search ? "該当するサービスがありません" : "「+ 追加」からサービスを登録しよう"}</p>
-            </div>
-          ) : (
-            <>
-              <div className="item-list">
-                {pageItems.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    onOpen={handleOpen}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))}
+          {/* タブ本体 */}
+          <div className="tab-content">
+            {tab === "calendar" && (
+              <div className="calendar-placeholder">
+                <p>📅 カレンダー機能は Phase 2.6 で復活予定</p>
+                <p className="hint">
+                  v0.7.4 の Outlookカレンダー連携は次フェーズで再統合します
+                </p>
               </div>
+            )}
+            {tab === "task" && (
+              <TaskTab
+                tasks={launcher.tasks}
+                onCreate={onCreateTask}
+                onUpdate={onUpdateTask}
+                onDelete={onDeleteTask}
+              />
+            )}
+            {tab === "memo" && (
+              <MemoTab
+                memos={launcher.memos}
+                onCreate={onCreateMemo}
+                onUpdate={onUpdateMemo}
+                onDelete={onDeleteMemo}
+              />
+            )}
+            {tab === "local" && (
+              <LocalTab
+                sections={launcher.sections}
+                onCreateSection={onCreateSection}
+                onUpdateSection={onUpdateSection}
+                onDeleteSection={onDeleteSection}
+                onCreateItem={onCreateItem}
+                onUpdateItem={onUpdateItem}
+                onDeleteItem={onDeleteItem}
+                onTouchItem={onTouchItem}
+              />
+            )}
+          </div>
 
-              {totalPages > 1 && (
-                <div className="pagination">
-                  <button disabled={currentPage === 1} onClick={() => setPage(1)}>最初</button>
-                  <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>前へ</button>
-                  <span className="page-info">{currentPage} / {totalPages}</span>
-                  <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>次へ</button>
-                  <button disabled={currentPage === totalPages} onClick={() => setPage(totalPages)}>最後</button>
-                </div>
-              )}
-            </>
+          {launcher.error && (
+            <div className="sync-error">⚠ 同期エラー: {launcher.error}</div>
           )}
         </>
       )}
 
-      {tab === "memo" && (
-        <MemoTab memos={memos} onSave={handleMemoSave} onDelete={handleMemoDelete} />
-      )}
-
-      {tab === "task" && (
-        <TaskTab
-          tasks={tasks}
-          onSave={handleTaskSave}
-          onToggleDone={handleTaskToggle}
-          onDelete={handleTaskDelete}
-        />
-      )}
-
-      {tab === "local" && preferences.showLocalTab && (
-        <LocalTab
-          sections={localSections}
-          onSectionsChange={setLocalSections}
-          importSource={localImportSource}
-          onImportSourceChange={setLocalImportSource}
-        />
-      )}
-
-      {tab === "calendar" && (
-        <CalendarTab
-          settings={calendar}
-          onSettingsChange={handleCalendarChange}
-          todayEvents={todayEvents}
-          tomorrowEvents={tomorrowEvents}
-          loading={calLoading}
-          calError={calError}
-          onRefresh={() => calendar && fetchEvents(calendar)}
-        />
-      )}
-
-      {showModal && (
-        <EditModal
-          item={editingItem}
-          onSave={handleSave}
-          onCancel={() => setShowModal(false)}
-        />
-      )}
-
+      {/* 設定モーダル */}
       {showSettingsModal && (
         <SettingsModal
-          dataPath={dataPath}
           theme={theme}
-          preferences={preferences}
-          onPathChange={(p) => {
-            setDataPath(p);
-            localStorage.setItem(PATH_KEY, p);
-          }}
           onThemeChange={setTheme}
+          preferences={preferences}
           onPreferencesChange={setPreferences}
+          loggedIn={!!kcUser}
+          email={kcUser?.email ?? null}
+          lastSyncAt={launcher.lastSyncAt}
           onClose={() => setShowSettingsModal(false)}
+          onOpenAdminConsole={handleOpenAdminConsole}
+          onLogin={handleKcLogin}
+          onLogout={handleKcLogout}
         />
       )}
     </div>
   );
 }
 
-interface SettingsModalProps {
-  dataPath: string;
-  theme: ThemeName;
-  preferences: Preferences;
-  onPathChange: (p: string) => void;
-  onThemeChange: (t: ThemeName) => void;
-  onPreferencesChange: (p: Preferences) => void;
-  onClose: () => void;
+// ============================================================
+// 未ログインパネル
+// ============================================================
+function NotLoggedInPanel({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="not-logged-in">
+      <h2>ようこそ Work Launcher へ</h2>
+      <p>
+        統合認証でログインすると、
+        マルチデバイスで同期されたサイト・メモ・タスクを使えます。
+      </p>
+      <button className="primary-btn" onClick={onLogin}>
+        🔐 統合認証ログイン
+      </button>
+      <p className="hint">
+        ブラウザが開いてメアド入力 → Entra認証 → 自動でアプリに戻ります
+      </p>
+    </div>
+  );
 }
 
-function SettingsModal({ dataPath, theme, preferences, onPathChange, onThemeChange, onPreferencesChange, onClose }: SettingsModalProps) {
-  const [path, setPath] = useState(dataPath);
-  const [reloadStatus, setReloadStatus] = useState<string | null>(null);
-
-  const handleApplyPath = async () => {
-    if (!path.trim()) return;
-    onPathChange(path.trim());
-    setReloadStatus("保存先を変更しました。アプリを再起動すると新しいパスから読み込みます。");
-  };
-
-  const handleResetDefault = async () => {
-    try {
-      const def = await invoke<string>("default_data_path");
-      setPath(def);
-    } catch {
-      // ignore
-    }
-  };
-
+// ============================================================
+// 設定モーダル
+// ============================================================
+function SettingsModal({
+  theme,
+  onThemeChange,
+  preferences,
+  onPreferencesChange,
+  loggedIn,
+  email,
+  lastSyncAt,
+  onClose,
+  onOpenAdminConsole,
+  onLogin,
+  onLogout,
+}: {
+  theme: ThemeName;
+  onThemeChange: (t: ThemeName) => void;
+  preferences: Preferences;
+  onPreferencesChange: (p: Preferences) => void;
+  loggedIn: boolean;
+  email: string | null;
+  lastSyncAt: number | null;
+  onClose: () => void;
+  onOpenAdminConsole: () => void;
+  onLogin: () => void;
+  onLogout: () => void;
+}) {
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>⚙ 設定</h2>
 
-        <div className="form-group">
-          <label>テーマ（背景色）</label>
-          <div className="theme-grid">
-            {THEMES.map((t) => (
+        <section>
+          <h3>テーマ</h3>
+          <div className="theme-row">
+            {(["pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
               <button
-                key={t.name}
-                type="button"
-                className={`theme-btn theme-${t.name} ${theme === t.name ? "active" : ""}`}
-                onClick={() => onThemeChange(t.name)}
+                key={t}
+                className={`theme-btn theme-${t} ${theme === t ? "active" : ""}`}
+                onClick={() => onThemeChange(t)}
               >
-                {t.emoji} {t.label}
+                {t}
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="form-group">
-          <label>起動時のウィンドウサイズ</label>
-          <div className="theme-grid">
-            {SIZES.map((s) => (
-              <button
-                key={s.name}
-                type="button"
-                className={`theme-btn ${preferences.startupSize === s.name ? "active" : ""}`}
-                onClick={() => onPreferencesChange({ ...preferences, startupSize: s.name })}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>起動時に開くタブ</label>
-          <div className="theme-grid">
-            {TABS.filter((t) => t.name !== "local" || preferences.showLocalTab).map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                className={`theme-btn ${preferences.startupTab === t.name ? "active" : ""}`}
-                onClick={() => onPreferencesChange({ ...preferences, startupTab: t.name })}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>📁 ローカル タブ</label>
-          <div className="theme-grid">
-            <button
-              type="button"
-              className={`theme-btn ${preferences.showLocalTab ? "active" : ""}`}
-              onClick={() => onPreferencesChange({ ...preferences, showLocalTab: true })}
-            >
-              ON（表示する）
-            </button>
-            <button
-              type="button"
-              className={`theme-btn ${!preferences.showLocalTab ? "active" : ""}`}
-              onClick={() =>
+        <section>
+          <h3>起動時の表示</h3>
+          <label>
+            起動タブ:
+            <select
+              value={preferences.startupTab}
+              onChange={(e) =>
                 onPreferencesChange({
                   ...preferences,
-                  showLocalTab: false,
-                  startupTab: preferences.startupTab === "local" ? "calendar" : preferences.startupTab,
+                  startupTab: e.target.value as TabName,
                 })
               }
             >
-              OFF（非表示）
-            </button>
-          </div>
-        </div>
+              <option value="calendar">カレンダー</option>
+              <option value="task">タスク</option>
+              <option value="memo">メモ</option>
+              <option value="local">ローカル</option>
+            </select>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={preferences.showLocalTab}
+              onChange={(e) =>
+                onPreferencesChange({
+                  ...preferences,
+                  showLocalTab: e.target.checked,
+                })
+              }
+            />
+            ローカル/サイトタブを表示
+          </label>
+        </section>
 
-        <div className="form-group">
-          <label>データ保存先（絶対パス）</label>
-          <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="/Users/xxx/Desktop/work-launcher.json"
-          />
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            <button type="button" className="icon-btn" onClick={handleApplyPath}>
-              保存先を適用
-            </button>
-            <button type="button" className="icon-btn" onClick={handleResetDefault}>
-              デフォルトに戻す
-            </button>
-          </div>
-          {reloadStatus && (
-            <div style={{ marginTop: 8, fontSize: 11, color: "var(--accent)" }}>{reloadStatus}</div>
+        <section>
+          <h3>統合認証</h3>
+          {loggedIn ? (
+            <>
+              <p>ログイン中: {email ?? "認証済"}</p>
+              {lastSyncAt && (
+                <p className="hint">
+                  最終同期: {new Date(lastSyncAt).toLocaleString("ja-JP")}
+                </p>
+              )}
+              <button onClick={onOpenAdminConsole} className="link-btn">
+                📝 Web で編集する（admin-console を開く）
+              </button>
+              <button onClick={onLogout} className="warn-btn">
+                🔓 ログアウト
+              </button>
+            </>
+          ) : (
+            <>
+              <p>未ログイン</p>
+              <button onClick={onLogin} className="primary-btn">
+                🔐 統合認証ログイン
+              </button>
+            </>
           )}
-        </div>
+        </section>
 
-        <div className="modal-actions">
-          <button type="button" className="btn-save" onClick={onClose}>閉じる</button>
+        <div className="modal-footer">
+          <button onClick={onClose}>閉じる</button>
         </div>
       </div>
     </div>
