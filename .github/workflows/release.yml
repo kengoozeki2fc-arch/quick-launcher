@@ -52,8 +52,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Quick Launcher ${{ github.ref_name }}'
-          releaseBody: 'Win/Mac installer'
+          releaseName: 'Work Launcher ${{ github.ref_name }}'
+          releaseBody: |
+            Work Launcher ${{ github.ref_name }}
+
+            Windows / macOS インストーラ。Pattern D ネイティブクライアント
+            （Custom URL Scheme `work-launcher://`）対応。
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
           args: ${{ matrix.args }}

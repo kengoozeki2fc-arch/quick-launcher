@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const REALM_BASE: &str = "https://id.kensetsu-total.support/realms/kensetsu-total";
 const CLIENT_ID: &str = "work-launcher";

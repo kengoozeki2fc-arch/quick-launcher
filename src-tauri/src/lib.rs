@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Sha256, Digest};
 use rand::RngCore;
-use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod kc_auth;

@@ -49,6 +49,7 @@ import {
   apiCreateTask,
   apiUpdateTask,
   apiDeleteTask,
+  apiCloneShared,
 } from "./api/launcher-api";
 import { clearCache } from "./cache/launcher-cache";
 
@@ -421,6 +422,21 @@ export default function App() {
     [setTasks, sync],
   );
 
+  // Shared / Templates
+  const onCloneShared = useCallback(
+    async (shareId: string) => {
+      try {
+        const sec = await apiCloneShared(shareId);
+        setSections((prev) => [...prev, { ...sec, items: sec.items ?? [] }]);
+        setNotification(`📋 「${sec.name}」を複製しました`);
+        setTimeout(() => setNotification(null), 1500);
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [setSections, sync],
+  );
+
   // ============================================================
   // 同期ボタン
   // ============================================================
@@ -428,6 +444,35 @@ export default function App() {
     setNotification("同期中…");
     await sync();
     setNotification(null);
+  }, [sync]);
+
+  // ============================================================
+  // オフライン検知（Phase 2.7 最小実装）
+  // - offline時: notification 表示・mutator は API失敗でエラー通知
+  // - online復帰時: 自動 sync
+  // 完全な queue+replay 機構は v1.5 以降で検討
+  // ============================================================
+  useEffect(() => {
+    const handleOnline = () => {
+      setNotification("オンライン復帰：再同期中…");
+      sync()
+        .catch(() => {})
+        .finally(() => {
+          setTimeout(() => setNotification(null), 1500);
+        });
+    };
+    const handleOffline = () => {
+      setNotification("⚠ オフライン: 再接続後に自動同期します");
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      handleOffline();
+    }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, [sync]);
 
   // ============================================================
@@ -582,6 +627,8 @@ export default function App() {
             {tab === "local" && (
               <LocalTab
                 sections={launcher.sections}
+                shared={launcher.shared}
+                onCloneShared={onCloneShared}
                 onCreateSection={onCreateSection}
                 onUpdateSection={onUpdateSection}
                 onDeleteSection={onDeleteSection}

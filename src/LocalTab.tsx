@@ -9,6 +9,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type {
   LauncherSection,
   LauncherItem,
+  LauncherShare,
   ItemTargetType,
 } from "./api/types";
 
@@ -25,6 +26,8 @@ const COLORS = [
 
 type Props = {
   sections: LauncherSection[];
+  shared: LauncherShare[];
+  onCloneShared: (shareId: string) => Promise<void>;
   onCreateSection: (input: {
     name: string;
     type?: string;
@@ -57,6 +60,8 @@ type Props = {
 
 export default function LocalTab({
   sections,
+  shared,
+  onCloneShared,
   onCreateSection,
   onUpdateSection,
   onDeleteSection,
@@ -151,6 +156,26 @@ export default function LocalTab({
         </div>
       )}
 
+      {/* テンプレ受信エリア（自分宛て共有・配布テンプレ） */}
+      {shared.length > 0 && (
+        <div className="shared-section">
+          <h3 className="shared-title">📦 共有・配布テンプレ ({shared.length})</h3>
+          <p className="shared-hint">
+            tenant_admin が配布したテンプレートです。「複製」で自分のセクションとして取り込めます。
+          </p>
+          <ul className="shared-list">
+            {shared.map((s) => (
+              <SharedItem
+                key={s.id}
+                share={s}
+                onClone={() => onCloneShared(s.id)}
+                onOpen={handleOpenItem}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
       {sections.length === 0 ? (
         <p className="empty">
           セクションがまだありません。Web画面（admin-console）またはここから追加してください。
@@ -174,6 +199,85 @@ export default function LocalTab({
         ))
       )}
     </div>
+  );
+}
+
+// ============================================================
+// SharedItem（受信側テンプレ表示・read-only + 複製ボタン）
+// ============================================================
+function SharedItem({
+  share,
+  onClone,
+  onOpen,
+}: {
+  share: LauncherShare;
+  onClone: () => Promise<void>;
+  onOpen: (item: LauncherItem) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  async function handleClone() {
+    if (
+      !confirm(
+        `「${share.section.name}」を自分のセクションとして複製しますか？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await onClone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="shared-item">
+      <div className="shared-header">
+        <button
+          className="shared-toggle"
+          onClick={() => setExpanded(!expanded)}
+          title={expanded ? "閉じる" : "開く"}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+        <span className={`local-section-dot dot-${share.section.color}`} />
+        <strong>{share.section.name}</strong>
+        <span className="shared-meta">
+          ({share.section.items.length}件・{share.permission})
+        </span>
+        <span style={{ flex: 1 }} />
+        {share.permission === "CLONE" && (
+          <button
+            onClick={handleClone}
+            disabled={busy}
+            className="primary-btn-slim"
+            title="自分のセクションとして複製"
+          >
+            📋 複製
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <ul className="shared-items">
+          {share.section.items.map((item) => (
+            <li key={item.id} className="shared-sub-item">
+              <button
+                className="local-item-link"
+                onClick={() => onOpen(item)}
+                title={item.target}
+              >
+                <span className="icon">
+                  {item.icon ?? (item.targetType === "URL" ? "🔗" : "📄")}
+                </span>
+                <span className="name">{item.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
