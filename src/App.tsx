@@ -85,7 +85,7 @@ function isNewerVersion(latest: string, current: string): boolean {
 // ============================================================
 export default function App() {
   // ローカル設定
-  const [theme, setTheme] = useState<ThemeName>("pink");
+  const [theme, setTheme] = useState<ThemeName>("cloudpower");
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
   const dataLoadedRef = useRef(false);
@@ -745,7 +745,7 @@ function SettingsModal({
         <section>
           <h3>テーマ</h3>
           <div className="theme-row">
-            {(["pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
+            {(["cloudpower", "pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
               <button
                 key={t}
                 className={`theme-btn theme-${t} ${theme === t ? "active" : ""}`}

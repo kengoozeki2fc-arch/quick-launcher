@@ -10,7 +10,7 @@ export interface CalendarSettings {
   tokenExpiry: number;
 }
 
-export type ThemeName = "pink" | "blue" | "black" | "white";
+export type ThemeName = "cloudpower" | "pink" | "blue" | "black" | "white";
 
 export type TabName = "calendar" | "task" | "memo" | "local";
 export type StartupSize = "compact" | "normal";
@@ -37,6 +37,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
 export const DEFAULT_APP_DATA: AppData = {
   version: 2,
   calendar: null,
-  theme: "pink",
+  theme: "cloudpower",
   preferences: DEFAULT_PREFERENCES,
 };

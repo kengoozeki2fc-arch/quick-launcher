@@ -5,8 +5,25 @@
 }
 
 /* テーマ変数 */
-/* 🌸 ピンク（桜色）— デフォルト */
+/* ☁️ CLOUDPOWER（クラウドパワー公式・#74B2E0）— デフォルト */
 :root,
+[data-theme="cloudpower"] {
+  --bg: #f2f8fc;
+  --surface: #ffffff;
+  --surface-2: #f8fafd;
+  --text: #1a3a5c;
+  --text-muted: #4a4a4a;
+  --accent: #74b2e0;
+  --accent-strong: #2e6ba6;
+  --border: #c5dde9;
+  --input-bg: #ffffff;
+  --modal-bg: #ffffff;
+  --badge-bg: #d6e9f5;
+  --notif-bg: #74b2e0;
+  --notif-text: #ffffff;
+}
+
+/* 🌸 ピンク（桜色） */
 [data-theme="pink"] {
   --bg: #fce4ec;
   --surface: #fff5f8;
@@ -917,6 +934,7 @@ body {
   box-shadow: 0 0 0 2px var(--accent) inset;
 }
 
+.theme-btn.theme-cloudpower { background: #f2f8fc; color: #2e6ba6; }
 .theme-btn.theme-pink { background: #fce4ec; color: #c2185b; }
 .theme-btn.theme-blue { background: #e3f2fd; color: #0d47a1; }
 .theme-btn.theme-black { background: #1a1a1a; color: #ff6b9d; }
