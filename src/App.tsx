@@ -58,6 +58,28 @@ const APP_DATA_FILE = "work-launcher/app.json";
 const APP_DATA_DIR = "work-launcher";
 const FS_OPTS = { baseDir: BaseDirectory.AppLocalData } as const;
 
+// semver比較（latest > current で true）
+// "1.0.0-beta.3" vs "0.7.4" 等の prerelease 込み比較に対応
+// 仕様: 数字部分(major.minor.patch)で大小判定 → 同値なら正式版 > prerelease版
+function isNewerVersion(latest: string, current: string): boolean {
+  const parse = (v: string) => {
+    const [main, pre = ""] = v.replace(/^v/, "").split("-", 2);
+    const nums = main.split(".").map((n) => parseInt(n, 10) || 0);
+    return { nums, pre };
+  };
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < 3; i++) {
+    const ai = a.nums[i] || 0;
+    const bi = b.nums[i] || 0;
+    if (ai !== bi) return ai > bi;
+  }
+  // major.minor.patch 同値: pre無し(正式) > pre有り
+  if (a.pre === "" && b.pre !== "") return true;
+  if (a.pre !== "" && b.pre === "") return false;
+  return a.pre > b.pre; // 文字列比較フォールバック
+}
+
 // ============================================================
 // メイン
 // ============================================================
@@ -211,7 +233,7 @@ export default function App() {
   const hasUpdate =
     !!latestVersion &&
     !!currentVersion &&
-    latestVersion !== currentVersion &&
+    isNewerVersion(latestVersion, currentVersion) &&
     !updateDismissed;
 
   // ============================================================

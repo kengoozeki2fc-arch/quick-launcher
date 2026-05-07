@@ -18,7 +18,15 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-exists",
-    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://admin.id.kensetsu-total.support/*" },
+        { "url": "https://graph.microsoft.com/*" },
+        { "url": "https://login.microsoftonline.com/*" },
+        { "url": "https://api.github.com/*" }
+      ]
+    },
     "dialog:allow-open",
     "deep-link:default"
   ]
