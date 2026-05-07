@@ -765,7 +765,79 @@ body {
 .cal-form {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.cal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-form input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.cal-form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(116, 178, 224, 0.18);
+}
+
+.cal-form input[type="text"]:disabled {
+  opacity: 0.6;
+  background: var(--surface-2);
+}
+
+.cal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cal-actions .primary-btn {
+  flex: 1;
+}
+
+.warn-btn {
+  padding: 10px 18px;
+  font-size: 14px;
+  color: #b71c1c;
+  background: #fdeaea;
+  border: 1px solid #f09da5;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.warn-btn:hover {
+  background: #f8d2d2;
+}
+
+.error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fdeaea;
+  border: 1px solid #f09da5;
+  border-radius: 8px;
+  color: #b71c1c;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .cal-connect-btn {
