@@ -745,7 +745,7 @@ function SettingsModal({
         <section>
           <h3>テーマ</h3>
           <div className="theme-row">
-            {(["cloudpower", "pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
+            {(["pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
               <button
                 key={t}
                 className={`theme-btn theme-${t} ${theme === t ? "active" : ""}`}
