@@ -151,7 +151,7 @@ async fn start_oauth_flow(
     app: tauri::AppHandle,
     tenant_id: String,
     client_id: String,
-) -> Result<String, String> {
+) -> Result<serde_json::Value, String> {
     // PKCE: ランダムなcode_verifierを生成
     let mut verifier_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut verifier_bytes);
@@ -241,7 +241,12 @@ async fn start_oauth_flow(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(token_resp)
+    let json: serde_json::Value = serde_json::from_str(&token_resp)
+        .map_err(|e| format!("token response parse error: {e} body={token_resp}"))?;
+    if json.get("error").is_some() {
+        return Err(format!("token endpoint error: {token_resp}"));
+    }
+    Ok(json)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
