@@ -2,7 +2,7 @@
 // 旧 HTMLインポート機能・LocalSection/LocalLink 構造はすべて廃止
 // データソース: useLauncherData の sections（LauncherSection[]・items 内包）
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -91,30 +91,29 @@ export default function LocalTab({
     }
   }
 
-  async function handleImportJson() {
-    let path: string | string[] | null;
-    try {
-      path = await openDialog({
-        multiple: false,
-        filters: [{ name: "Work Launcher JSON", extensions: ["json"] }],
-      });
-    } catch (e) {
-      alert(`ファイル選択エラー: ${e}`);
-      return;
-    }
-    if (!path || typeof path !== "string") return;
+  const importInputRef = useRef<HTMLInputElement>(null);
 
+  function handleImportJsonClick() {
+    importInputRef.current?.click();
+  }
+
+  async function handleImportFileChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
     setBusy(true);
     try {
-      const content = await invoke<string>("read_file_abs", { path });
+      const content = await file.text();
       const data = JSON.parse(content);
       const result = await apiMigrateUpload(data);
       alert(
         `取込完了\nセクション: ${result.imported.sections}件\nアイテム: ${result.imported.items}件\nメモ: ${result.imported.memos}件\nタスク: ${result.imported.tasks}件\n\n反映には画面を再読込します。`,
       );
       window.location.reload();
-    } catch (e) {
-      alert(`取込失敗: ${e}`);
+    } catch (err) {
+      alert(`取込失敗: ${err}`);
     } finally {
       setBusy(false);
     }
@@ -144,8 +143,15 @@ export default function LocalTab({
             <button onClick={() => setShowAddSection(true)} className="add-btn">
               ＋ セクション追加
             </button>
+            <input
+              type="file"
+              accept=".json,application/json"
+              ref={importInputRef}
+              style={{ display: "none" }}
+              onChange={handleImportFileChange}
+            />
             <button
-              onClick={handleImportJson}
+              onClick={handleImportJsonClick}
               className="add-btn"
               disabled={busy}
               title="v0.7時代の work-launcher.json を取込"
