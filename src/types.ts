@@ -37,6 +37,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
 export const DEFAULT_APP_DATA: AppData = {
   version: 2,
   calendar: null,
-  theme: "cloudpower",
+  theme: "pink",
   preferences: DEFAULT_PREFERENCES,
 };

@@ -85,7 +85,7 @@ function isNewerVersion(latest: string, current: string): boolean {
 // ============================================================
 export default function App() {
   // ローカル設定
-  const [theme, setTheme] = useState<ThemeName>("cloudpower");
+  const [theme, setTheme] = useState<ThemeName>("pink");
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [calendar, setCalendar] = useState<CalendarSettings | null>(null);
   const dataLoadedRef = useRef(false);

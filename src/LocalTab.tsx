@@ -12,6 +12,7 @@ import type {
   LauncherShare,
   ItemTargetType,
 } from "./api/types";
+import { apiMigrateUpload } from "./api/launcher-api";
 
 const COLORS = [
   "pink",
@@ -90,6 +91,35 @@ export default function LocalTab({
     }
   }
 
+  async function handleImportJson() {
+    let path: string | string[] | null;
+    try {
+      path = await openDialog({
+        multiple: false,
+        filters: [{ name: "Work Launcher JSON", extensions: ["json"] }],
+      });
+    } catch (e) {
+      alert(`ファイル選択エラー: ${e}`);
+      return;
+    }
+    if (!path || typeof path !== "string") return;
+
+    setBusy(true);
+    try {
+      const content = await invoke<string>("read_file_abs", { path });
+      const data = JSON.parse(content);
+      const result = await apiMigrateUpload(data);
+      alert(
+        `取込完了\nセクション: ${result.imported.sections}件\nアイテム: ${result.imported.items}件\nメモ: ${result.imported.memos}件\nタスク: ${result.imported.tasks}件\n\n反映には画面を再読込します。`,
+      );
+      window.location.reload();
+    } catch (e) {
+      alert(`取込失敗: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAddSection() {
     if (!newSectionName.trim()) return;
     setBusy(true);
@@ -110,9 +140,19 @@ export default function LocalTab({
     <div className="local-tab">
       <div className="local-toolbar">
         {showAddSection ? null : (
-          <button onClick={() => setShowAddSection(true)} className="add-btn">
-            ＋ セクション追加
-          </button>
+          <>
+            <button onClick={() => setShowAddSection(true)} className="add-btn">
+              ＋ セクション追加
+            </button>
+            <button
+              onClick={handleImportJson}
+              className="add-btn"
+              disabled={busy}
+              title="v0.7時代の work-launcher.json を取込"
+            >
+              📤 旧JSON取込
+            </button>
+          </>
         )}
       </div>
 
