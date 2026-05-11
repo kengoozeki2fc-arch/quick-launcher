@@ -26,7 +26,9 @@ import { DEFAULT_PREFERENCES } from "./types";
 import MemoTab from "./MemoTab";
 import TaskTab from "./TaskTab";
 import LocalTab from "./LocalTab";
+import SitesTab from "./SitesTab";
 import CalendarTab from "./CalendarTab";
+import type { ItemTargetType } from "./api/types";
 import {
   kcLogin,
   kcLogout,
@@ -93,6 +95,7 @@ export default function App() {
   // UI 状態
   const [tab, setTab] = useState<TabName>("calendar");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
   // バージョン情報
@@ -293,8 +296,11 @@ export default function App() {
       sectionId: string;
       name: string;
       target: string;
-      targetType?: "URL" | "FILE_LOCAL";
+      targetType?: ItemTargetType;
       icon?: string;
+      loginId?: string | null;
+      password?: string | null;
+      hasOtp?: boolean;
     }) => {
       try {
         const item = await apiCreateItem(input);
@@ -317,8 +323,11 @@ export default function App() {
       patch: Partial<{
         name: string;
         target: string;
-        targetType: "URL" | "FILE_LOCAL";
+        targetType: ItemTargetType;
         icon: string | null;
+        loginId: string | null;
+        password: string | null;
+        hasOtp: boolean;
       }>,
     ) => {
       try {
@@ -509,12 +518,15 @@ export default function App() {
   // ============================================================
   // Render
   // ============================================================
-  const tabs: { key: TabName; label: string }[] = [
-    { key: "calendar", label: "📅" },
-    { key: "task", label: "✅" },
-    { key: "memo", label: "📝" },
-    { key: "local", label: "📁" },
+  const openTaskCount = launcher.tasks.filter((t) => !t.completedAt).length;
+  const tabs: { key: TabName; label: string; badge?: number }[] = [
+    { key: "calendar", label: "📅 カレンダー" },
+    { key: "task", label: "✅ タスク", badge: openTaskCount },
+    { key: "launcher", label: "🚀 サイト" },
+    { key: "memo", label: "📝 メモ" },
+    { key: "local", label: "📁 ローカル" },
   ];
+
 
   return (
     <div className="app" data-theme={theme}>
@@ -551,6 +563,14 @@ export default function App() {
       <div className="header">
         <h1>Work Launcher</h1>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {kcUser && tab === "launcher" && (
+            <button
+              className="add-btn"
+              onClick={() => setShowAddItemModal(true)}
+            >
+              ＋ 追加
+            </button>
+          )}
           {kcUser ? (
             <>
               <button
@@ -617,6 +637,9 @@ export default function App() {
                   onClick={() => setTab(t.key)}
                 >
                   {t.label}
+                  {typeof t.badge === "number" && t.badge > 0 && (
+                    <span className="tab-badge">{t.badge}</span>
+                  )}
                 </button>
               );
             })}
@@ -644,6 +667,18 @@ export default function App() {
                 onCreate={onCreateMemo}
                 onUpdate={onUpdateMemo}
                 onDelete={onDeleteMemo}
+              />
+            )}
+            {tab === "launcher" && (
+              <SitesTab
+                sections={launcher.sections}
+                showAddModal={showAddItemModal}
+                onCloseAddModal={() => setShowAddItemModal(false)}
+                onCreateSection={onCreateSection}
+                onCreateItem={onCreateItem}
+                onUpdateItem={onUpdateItem}
+                onDeleteItem={onDeleteItem}
+                onTouchItem={onTouchItem}
               />
             )}
             {tab === "local" && (

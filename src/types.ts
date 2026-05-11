@@ -12,7 +12,7 @@ export interface CalendarSettings {
 
 export type ThemeName = "cloudpower" | "pink" | "blue" | "black" | "white";
 
-export type TabName = "calendar" | "task" | "memo" | "local";
+export type TabName = "calendar" | "task" | "launcher" | "memo" | "local";
 export type StartupSize = "compact" | "normal";
 
 export interface Preferences {

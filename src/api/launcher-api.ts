@@ -55,6 +55,9 @@ export async function apiCreateItem(input: {
   target: string;
   targetType?: ItemTargetType;
   icon?: string;
+  loginId?: string | null;
+  password?: string | null;
+  hasOtp?: boolean;
 }): Promise<LauncherItem> {
   const r = await apiPost<{ item: LauncherItem }>(
     "/api/work-launcher/items",
@@ -72,6 +75,9 @@ export async function apiUpdateItem(
     icon: string | null;
     sortOrder: number;
     sectionId: string;
+    loginId: string | null;
+    password: string | null;
+    hasOtp: boolean;
   }>,
 ): Promise<LauncherItem> {
   const r = await apiPut<{ item: LauncherItem }>(

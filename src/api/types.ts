@@ -15,6 +15,10 @@ export type LauncherItem = {
   icon: string | null;
   sortOrder: number;
   lastUsedAt: string | null;
+  // v0.7.4 サイトカード互換
+  loginId: string | null;
+  password: string | null;
+  hasOtp: boolean;
   createdAt: string;
   updatedAt: string;
 };

@@ -222,12 +222,17 @@ export default function LocalTab({
         </div>
       )}
 
-      {sections.length === 0 ? (
-        <p className="empty">
-          セクションがまだありません。Web画面（admin-console）またはここから追加してください。
-        </p>
-      ) : (
-        sections.map((sec) => (
+      {(() => {
+        const nonUrlSections = sections.filter((s) => s.type !== "URL");
+        if (nonUrlSections.length === 0) {
+          return (
+            <p className="empty">
+              ファイル/フォルダ系セクションがまだありません。
+              「＋ セクション追加」または「旧JSON取込」から始めてください。
+            </p>
+          );
+        }
+        return nonUrlSections.map((sec) => (
           <SectionCard
             key={sec.id}
             section={sec}
@@ -242,8 +247,8 @@ export default function LocalTab({
             onDeleteItem={onDeleteItem}
             onOpenItem={handleOpenItem}
           />
-        ))
-      )}
+        ));
+      })()}
     </div>
   );
 }
