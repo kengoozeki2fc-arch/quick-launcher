@@ -310,19 +310,31 @@ function ItemCard({ item, onOpen, onEdit, onDelete }: ItemCardProps) {
         <CopyButton text={item.target} />
       </div>
 
-      {item.loginId !== null && item.loginId !== "" && (
-        <div className="item-row">
-          <span className="item-label">ID</span>
-          <span className="item-value">{item.loginId}</span>
-          <CopyButton text={item.loginId ?? ""} />
-        </div>
-      )}
+      {/* ID 行：常に表示。値があれば値、なければ薄字で「（未設定）」 */}
+      <div className="item-row">
+        <span className="item-label">ID</span>
+        <span
+          className="item-value"
+          style={!item.loginId ? { opacity: 0.4 } : undefined}
+        >
+          {item.loginId || "（未設定）"}
+        </span>
+        <CopyButton text={item.loginId ?? ""} />
+      </div>
 
-      {item.password !== null && item.password !== "" && (
-        <div className="item-row">
-          <span className="item-label">PW</span>
-          <span className="item-value">
-            {showPw ? item.password : "••••••••"}
+      {/* PW 行：常に表示。値があればマスク表示＋表示切替、なければ薄字で「（未設定）」 */}
+      <div className="item-row">
+        <span className="item-label">PW</span>
+        <span
+          className="item-value"
+          style={!item.password ? { opacity: 0.4 } : undefined}
+        >
+          {item.password
+            ? showPw
+              ? item.password
+              : "••••••••"
+            : "（未設定）"}
+          {item.password && (
             <button
               onClick={() => setShowPw((v) => !v)}
               className="pw-toggle"
@@ -330,14 +342,19 @@ function ItemCard({ item, onOpen, onEdit, onDelete }: ItemCardProps) {
             >
               {showPw ? "🙈" : "👁"}
             </button>
-          </span>
-          <CopyButton text={item.password ?? ""} />
-          <label className="otp-badge">
-            <input type="checkbox" checked={item.hasOtp} disabled readOnly />
-            OTP
-          </label>
-        </div>
-      )}
+          )}
+        </span>
+        <CopyButton text={item.password ?? ""} />
+        <label className="otp-badge">
+          <input
+            type="checkbox"
+            checked={!!item.hasOtp}
+            disabled
+            readOnly
+          />
+          OTP
+        </label>
+      </div>
     </div>
   );
 }
