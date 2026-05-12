@@ -585,147 +585,11 @@ body {
   color: var(--accent-strong);
 }
 
-.memo-body {
-  font-size: 13px;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.5;
-  max-height: 120px;
-  overflow-y: auto;
-  margin-bottom: 6px;
-}
-
-.memo-date {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: right;
-}
-
-.memo-modal textarea {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
-  font-family: inherit;
-  transition: border-color 0.2s;
-}
-
-.memo-modal textarea:focus {
-  border-color: var(--accent);
-}
-
-/* Task */
-.task-section {
-  margin-bottom: 16px;
-}
-
-.task-section-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
+/* Task: 新 TaskTab は .task-list と .task-card 系（beta.13パッチ参照） */
 .task-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.task-card {
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  transition: border-color 0.2s;
-}
-
-.task-card.task-overdue {
-  border-color: #e74c3c;
-  background: #fff5f5;
-}
-
-.task-card.task-near {
-  border-color: #ff9800;
-  background: #fff8f0;
-}
-
-.task-card.task-done {
-  opacity: 0.55;
-}
-
-.task-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.task-check-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  flex: 1;
-  min-width: 0;
-}
-
-.task-check-label input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.task-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-done .task-title {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-
-.task-deadline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.task-time-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 10px;
-}
-
-.badge-overdue {
-  background: #fde8e8;
-  color: #e74c3c;
-}
-
-.badge-near {
-  background: #fff3e0;
-  color: #e65100;
 }
 
 /* Calendar */
@@ -1021,100 +885,6 @@ body {
   max-width: 100%;
 }
 
-.compact-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.compact-header h1 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent-strong);
-}
-
-.compact-section {
-  margin-bottom: 12px;
-}
-
-.compact-section-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--border);
-}
-
-.compact-empty {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 4px 0;
-}
-
-.compact-event {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 5px 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 4px;
-  font-size: 11px;
-}
-
-.compact-event-time {
-  color: var(--accent);
-  font-weight: 700;
-  flex-shrink: 0;
-  min-width: 36px;
-}
-
-.compact-event-title {
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-task {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 5px 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 4px;
-  font-size: 11px;
-}
-
-.compact-task input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.compact-task-title {
-  flex: 1;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-task-time {
-  color: var(--text-muted);
-  font-size: 10px;
-  flex-shrink: 0;
-}
 
 
 /* ---------- Local tab ---------- */
@@ -1263,27 +1033,10 @@ body {
 }
 
 /* ============================================================
-   Phase2 リネーム対応: 旧 v0.7.4 styles と同じ見た目で新クラスにも当てる
+   Phase2 リネーム対応: v0.7.4 互換UI（beta.13〜）で使う共通クラス
    ============================================================ */
 
-/* TaskTab: task-item / task-section-title / task-check / task-body / task-due */
-.task-item {
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  transition: border-color 0.2s;
-}
-.task-item.overdue {
-  border-color: #e74c3c;
-  background: #fff5f5;
-}
-.task-item.done {
-  opacity: 0.55;
-}
+/* TaskTab: section-title だけ。task-card 系は beta.13 パッチで定義 */
 .task-section-title {
   font-size: 12px;
   font-weight: 600;
@@ -1292,54 +1045,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.task-check {
-  accent-color: var(--accent);
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  cursor: pointer;
-}
-.task-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.task-body .task-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: normal;
-  overflow: visible;
-}
-.task-item.done .task-title {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-.task-due {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.task-add {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.task-add input[type="text"],
-.task-add input[type="date"],
-.task-add input[type="time"] {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-size: 13px;
-}
-.task-add input[type="text"] { flex: 1; min-width: 120px; }
 
 /* CalendarTab: cal-list / cal-event / cal-time / cal-subject / cal-loc */
 .cal-list {
@@ -1386,50 +1091,8 @@ body {
   font-size: 13px;
 }
 
-/* MemoTab: memo-tab / memo-toolbar / memo-add / memo-add-actions */
-.memo-tab { display: flex; flex-direction: column; gap: 10px; }
+/* MemoTab: memo-toolbar（新メモCSSはbeta.13パッチで .memo-card 系を定義） */
 .memo-toolbar { display: flex; gap: 6px; }
-.memo-add {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.memo-add input[type="text"],
-.memo-add textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-}
-.memo-add textarea { min-height: 80px; resize: vertical; }
-.memo-add-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.memo-list { display: flex; flex-direction: column; gap: 8px; }
-.memo-item {
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-}
-.memo-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent-strong);
-  margin-bottom: 4px;
-}
-.memo-body {
-  font-size: 13px;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 
 /* 共通 add-btn / icon-btn-slim 微調整（既存と整合） */
 .add-btn {
