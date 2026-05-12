@@ -2,7 +2,7 @@
 // 旧 HTMLインポート機能・LocalSection/LocalLink 構造はすべて廃止
 // データソース: useLauncherData の sections（LauncherSection[]・items 内包）
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -12,7 +12,6 @@ import type {
   LauncherShare,
   ItemTargetType,
 } from "./api/types";
-import { apiMigrateUpload } from "./api/launcher-api";
 
 const COLORS = [
   "pink",
@@ -91,34 +90,6 @@ export default function LocalTab({
     }
   }
 
-  const importInputRef = useRef<HTMLInputElement>(null);
-
-  function handleImportJsonClick() {
-    importInputRef.current?.click();
-  }
-
-  async function handleImportFileChange(
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setBusy(true);
-    try {
-      const content = await file.text();
-      const data = JSON.parse(content);
-      const result = await apiMigrateUpload(data);
-      alert(
-        `取込完了\nセクション: ${result.imported.sections}件\nアイテム: ${result.imported.items}件\nメモ: ${result.imported.memos}件\nタスク: ${result.imported.tasks}件\n\n反映には画面を再読込します。`,
-      );
-      window.location.reload();
-    } catch (err) {
-      alert(`取込失敗: ${err}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleAddSection() {
     if (!newSectionName.trim()) return;
     setBusy(true);
@@ -139,26 +110,9 @@ export default function LocalTab({
     <div className="local-tab">
       <div className="local-toolbar">
         {showAddSection ? null : (
-          <>
-            <button onClick={() => setShowAddSection(true)} className="add-btn">
-              ＋ セクション追加
-            </button>
-            <input
-              type="file"
-              accept=".json,application/json"
-              ref={importInputRef}
-              style={{ display: "none" }}
-              onChange={handleImportFileChange}
-            />
-            <button
-              onClick={handleImportJsonClick}
-              className="add-btn"
-              disabled={busy}
-              title="v0.7時代の work-launcher.json を取込"
-            >
-              📤 旧JSON取込
-            </button>
-          </>
+          <button onClick={() => setShowAddSection(true)} className="add-btn">
+            ＋ セクション追加
+          </button>
         )}
       </div>
 

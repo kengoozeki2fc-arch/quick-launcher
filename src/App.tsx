@@ -52,6 +52,7 @@ import {
   apiUpdateTask,
   apiDeleteTask,
   apiCloneShared,
+  apiMigrateUpload,
 } from "./api/launcher-api";
 import { clearCache } from "./cache/launcher-cache";
 
@@ -97,6 +98,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+  const [compact, setCompact] = useState(false);
 
   // バージョン情報
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
@@ -204,6 +206,16 @@ export default function App() {
   const handleToggleMaximize = useCallback(async () => {
     const win = getCurrentWindow();
     await win.setSize(new LogicalSize(540, 800));
+  }, []);
+
+  // ============================================================
+  // コンパクトモード検知（ウィンドウ幅 < 480px で2段ヘッダー）
+  // ============================================================
+  useEffect(() => {
+    const check = () => setCompact(window.innerWidth < 480);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   // ============================================================
@@ -507,13 +519,30 @@ export default function App() {
   }, [sync]);
 
   // ============================================================
-  // 設定モーダル: Web で編集
+  // 設定モーダル: Web で編集 / 旧JSON取込
   // ============================================================
   const handleOpenAdminConsole = useCallback(() => {
     open(`${ADMIN_CONSOLE_URL}/admin/work-launcher`).catch((e) =>
       console.error(e),
     );
   }, []);
+
+  const handleImportLegacyJson = useCallback(
+    async (file: File) => {
+      try {
+        const content = await file.text();
+        const data = JSON.parse(content);
+        const result = await apiMigrateUpload(data);
+        const msg = `取込完了\nセクション: ${result.imported.sections}件 / アイテム: ${result.imported.items}件 / メモ: ${result.imported.memos}件 / タスク: ${result.imported.tasks}件\n\n反映のため再読込します。`;
+        alert(msg);
+        await sync();
+        window.location.reload();
+      } catch (err) {
+        alert(`取込失敗: ${err}`);
+      }
+    },
+    [sync],
+  );
 
   // ============================================================
   // Render
@@ -529,7 +558,7 @@ export default function App() {
 
 
   return (
-    <div className="app" data-theme={theme}>
+    <div className={`app ${compact ? "compact" : ""}`} data-theme={theme}>
       {hasUpdate && (
         <div
           className="update-banner"
@@ -717,6 +746,7 @@ export default function App() {
           onOpenAdminConsole={handleOpenAdminConsole}
           onLogin={handleKcLogin}
           onLogout={handleKcLogout}
+          onImportLegacyJson={handleImportLegacyJson}
         />
       )}
     </div>
@@ -759,6 +789,7 @@ function SettingsModal({
   onOpenAdminConsole,
   onLogin,
   onLogout,
+  onImportLegacyJson,
 }: {
   theme: ThemeName;
   onThemeChange: (t: ThemeName) => void;
@@ -771,7 +802,9 @@ function SettingsModal({
   onOpenAdminConsole: () => void;
   onLogin: () => void;
   onLogout: () => void;
+  onImportLegacyJson: (file: File) => Promise<void>;
 }) {
+  const importInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
@@ -826,6 +859,30 @@ function SettingsModal({
             />
             <span>📁 ローカルタブを表示する</span>
           </label>
+        </div>
+
+        <div className="form-group">
+          <label>データ移行</label>
+          <input
+            type="file"
+            accept=".json,application/json"
+            ref={importInputRef}
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) onImportLegacyJson(f);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="settings-btn-secondary"
+            style={{ width: "100%" }}
+            title="v0.7 時代の work-launcher.json を取込"
+          >
+            📤 旧JSON取込（work-launcher.json）
+          </button>
         </div>
 
         <div className="form-group">

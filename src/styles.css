@@ -1876,3 +1876,31 @@ body {
   margin: 12px 0;
   line-height: 1.6;
 }
+
+/* ============================================================
+   v0.7.4 UI追加パッチ#3 (beta.17)
+   コンパクトモード時のヘッダー2段化
+   ============================================================ */
+.app.compact .header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.app.compact .header > div:nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.app.compact .header h1 {
+  font-size: 16px;
+  text-align: left;
+}
+.app.compact .tabs {
+  flex-wrap: wrap;
+}
+.app.compact .tab-btn {
+  flex: 1 1 80px;
+  font-size: 12px;
+  padding: 6px 8px;
+}
