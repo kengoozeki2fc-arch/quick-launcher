@@ -266,7 +266,6 @@ body {
   max-width: 460px;
   border: 1px solid var(--border);
   box-sizing: border-box;
-  overflow: hidden;
 }
 
 .modal h2 {
@@ -1654,16 +1653,20 @@ body {
 .modal .form-group .otp-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
   color: var(--text);
-  flex-wrap: nowrap;
-  white-space: normal;
-  word-break: keep-all;
+  cursor: pointer;
 }
 .modal .form-group .otp-row > input[type="checkbox"] {
   flex-shrink: 0;
   margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.modal .form-group .otp-row > span {
+  flex: 1;
+  word-break: break-word;
 }
 .modal .modal-actions {
   display: flex;

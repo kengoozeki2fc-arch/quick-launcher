@@ -444,7 +444,7 @@ function ItemEditModal({ item, onSave, onCancel }: ItemEditModalProps) {
                 checked={hasOtp}
                 onChange={(e) => setHasOtp(e.target.checked)}
               />
-              OTPワンタイムパスワード併用
+              <span>OTPを併用する</span>
             </label>
           </div>
           <div className="modal-actions">
