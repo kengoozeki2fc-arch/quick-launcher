@@ -773,16 +773,17 @@ function SettingsModal({
   onLogout: () => void;
 }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
         <h2>⚙ 設定</h2>
 
-        <section>
-          <h3>テーマ</h3>
+        <div className="form-group">
+          <label>テーマ</label>
           <div className="theme-row">
             {(["pink", "blue", "black", "white"] as ThemeName[]).map((t) => (
               <button
                 key={t}
+                type="button"
                 className={`theme-btn theme-${t} ${theme === t ? "active" : ""}`}
                 onClick={() => onThemeChange(t)}
               >
@@ -790,28 +791,29 @@ function SettingsModal({
               </button>
             ))}
           </div>
-        </section>
+        </div>
 
-        <section>
-          <h3>起動時の表示</h3>
-          <label>
-            起動タブ:
-            <select
-              value={preferences.startupTab}
-              onChange={(e) =>
-                onPreferencesChange({
-                  ...preferences,
-                  startupTab: e.target.value as TabName,
-                })
-              }
-            >
-              <option value="calendar">カレンダー</option>
-              <option value="task">タスク</option>
-              <option value="memo">メモ</option>
-              <option value="local">ローカル</option>
-            </select>
-          </label>
-          <label>
+        <div className="form-group">
+          <label>起動時に開くタブ</label>
+          <select
+            value={preferences.startupTab}
+            onChange={(e) =>
+              onPreferencesChange({
+                ...preferences,
+                startupTab: e.target.value as TabName,
+              })
+            }
+          >
+            <option value="calendar">📅 カレンダー</option>
+            <option value="task">✅ タスク</option>
+            <option value="launcher">🚀 サイト</option>
+            <option value="memo">📝 メモ</option>
+            <option value="local">📁 ローカル</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label className="settings-checkbox">
             <input
               type="checkbox"
               checked={preferences.showLocalTab}
@@ -822,39 +824,64 @@ function SettingsModal({
                 })
               }
             />
-            ローカル/サイトタブを表示
+            <span>📁 ローカルタブを表示する</span>
           </label>
-        </section>
+        </div>
 
-        <section>
-          <h3>統合認証</h3>
+        <div className="form-group">
+          <label>統合認証</label>
           {loggedIn ? (
-            <>
-              <p>ログイン中: {email ?? "認証済"}</p>
+            <div className="settings-auth-info">
+              <div className="settings-auth-line">
+                <span className="settings-auth-label">ログイン中</span>
+                <span className="settings-auth-value">{email ?? "認証済"}</span>
+              </div>
               {lastSyncAt && (
-                <p className="hint">
-                  最終同期: {new Date(lastSyncAt).toLocaleString("ja-JP")}
-                </p>
+                <div className="settings-auth-line">
+                  <span className="settings-auth-label">最終同期</span>
+                  <span className="settings-auth-value">
+                    {new Date(lastSyncAt).toLocaleString("ja-JP")}
+                  </span>
+                </div>
               )}
-              <button onClick={onOpenAdminConsole} className="link-btn">
-                📝 Web で編集する（admin-console を開く）
-              </button>
-              <button onClick={onLogout} className="warn-btn">
-                🔓 ログアウト
-              </button>
-            </>
+              <div className="settings-auth-actions">
+                <button
+                  type="button"
+                  onClick={onOpenAdminConsole}
+                  className="settings-btn-secondary"
+                >
+                  📝 Web で編集
+                </button>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="settings-btn-danger"
+                >
+                  🔓 ログアウト
+                </button>
+              </div>
+            </div>
           ) : (
-            <>
-              <p>未ログイン</p>
-              <button onClick={onLogin} className="primary-btn">
+            <div className="settings-auth-info">
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                未ログイン
+              </p>
+              <button
+                type="button"
+                onClick={onLogin}
+                className="btn-save"
+                style={{ width: "100%" }}
+              >
                 🔐 統合認証ログイン
               </button>
-            </>
+            </div>
           )}
-        </section>
+        </div>
 
-        <div className="modal-footer">
-          <button onClick={onClose}>閉じる</button>
+        <div className="modal-actions">
+          <button type="button" className="btn-save" onClick={onClose}>
+            閉じる
+          </button>
         </div>
       </div>
     </div>

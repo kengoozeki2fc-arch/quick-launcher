@@ -1702,3 +1702,174 @@ body {
 .empty-state p {
   margin: 4px 0;
 }
+
+/* ============================================================
+   v0.7.4 UI追加パッチ#2 (beta.15)
+   設定モーダル整形・ローカル「セクション追加」フォーム整形・
+   空状態の余白
+   ============================================================ */
+
+/* --- 設定モーダル ---*/
+.settings-modal {
+  max-width: 420px;
+}
+.settings-modal .form-group {
+  margin-bottom: 14px;
+}
+.settings-modal .form-group label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.settings-modal .form-group > select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.settings-modal .theme-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.settings-modal .theme-btn {
+  flex: 1 0 70px;
+  min-height: 32px;
+}
+.settings-checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: var(--text) !important;
+  margin-bottom: 0 !important;
+  cursor: pointer;
+}
+.settings-checkbox input[type="checkbox"] {
+  flex-shrink: 0;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+
+/* --- 統合認証セクション ---*/
+.settings-auth-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.settings-auth-line {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  align-items: baseline;
+}
+.settings-auth-label {
+  color: var(--text-muted);
+  min-width: 60px;
+}
+.settings-auth-value {
+  color: var(--text);
+  word-break: break-all;
+  flex: 1;
+}
+.settings-auth-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.settings-btn-secondary,
+.settings-btn-danger {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.settings-btn-secondary:hover {
+  background: var(--accent-soft);
+}
+.settings-btn-danger {
+  color: var(--danger, #c0392b);
+  border-color: var(--danger, #c0392b);
+}
+.settings-btn-danger:hover {
+  background: #fde2e2;
+}
+
+/* --- ローカル「セクション追加」フォーム ---*/
+.local-add-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.local-add-section input[type="text"] {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.local-add-section select {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  min-width: 80px;
+}
+.local-add-section button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.local-add-section button:first-of-type {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.local-add-section button:first-of-type:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- ローカルタブ空状態の整形 ---*/
+.local-tab .empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 28px 20px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  margin: 12px 0;
+  line-height: 1.6;
+}
