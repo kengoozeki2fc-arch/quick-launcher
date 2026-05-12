@@ -18,6 +18,43 @@ export interface CalendarEvent {
   end: { dateTime: string; timeZone: string };
   isAllDay: boolean;
   location?: { displayName: string };
+  bodyPreview?: string;
+  body?: { contentType: string; content: string };
+  isOnlineMeeting?: boolean;
+  onlineMeetingProvider?: string; // "teamsForBusiness" | "skypeForBusiness" | "skypeForConsumer" | "unknown"
+  onlineMeeting?: { joinUrl: string } | null;
+}
+
+// 会議リンク検出ヘルパ
+// 戻り値: { type: "teams" | "zoom" | null, url: string | null }
+export function detectMeetingLink(e: CalendarEvent): {
+  type: "teams" | "zoom" | null;
+  url: string | null;
+} {
+  // 1. Teams: Graph の isOnlineMeeting + onlineMeeting.joinUrl
+  if (
+    e.isOnlineMeeting &&
+    e.onlineMeetingProvider === "teamsForBusiness" &&
+    e.onlineMeeting?.joinUrl
+  ) {
+    return { type: "teams", url: e.onlineMeeting.joinUrl };
+  }
+  // 2. Zoom: body / bodyPreview / location から URL 抽出
+  const haystacks = [
+    e.body?.content ?? "",
+    e.bodyPreview ?? "",
+    e.location?.displayName ?? "",
+  ];
+  for (const h of haystacks) {
+    const m = h.match(/https?:\/\/[a-z0-9-]+\.zoom\.us\/[^\s"'<>]+/i);
+    if (m) return { type: "zoom", url: m[0] };
+  }
+  // 3. body の中に Teams join URL がべた書きされてるケース
+  for (const h of haystacks) {
+    const m = h.match(/https?:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^\s"'<>]+/i);
+    if (m) return { type: "teams", url: m[0] };
+  }
+  return { type: null, url: null };
 }
 
 // Graph API の dateTime は UTC だが 'Z' サフィックスなしで返るため付与して正しくパースする
@@ -135,7 +172,7 @@ export default function CalendarTab({ calendar, onCalendarChange }: Props) {
       afterTomorrow.setDate(afterTomorrow.getDate() + 2);
       try {
         const data = await msGet(
-          `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location&$orderby=start/dateTime&$top=50`,
+          `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${today.toISOString()}&endDateTime=${afterTomorrow.toISOString()}&$select=subject,start,end,isAllDay,location,bodyPreview,body,isOnlineMeeting,onlineMeetingProvider,onlineMeeting&$orderby=start/dateTime&$top=50`,
           cur.accessToken,
         );
         if (data.error) {
@@ -149,10 +186,14 @@ export default function CalendarTab({ calendar, onCalendarChange }: Props) {
         const tomorrowDate = new Date(today);
         tomorrowDate.setDate(tomorrowDate.getDate() + 1);
         const tomorrowStr = formatDateLabel(tomorrowDate);
+        // 今日は「開始から1時間以上経過した予定」を除外（過去のは見えても邪魔なため）
+        const oneHourAgoMs = Date.now() - 60 * 60 * 1000;
         setTodayEvents(
-          events.filter(
-            (e) => formatDateLabel(toUtcDate(e.start.dateTime)) === todayStr,
-          ),
+          events.filter((e) => {
+            if (formatDateLabel(toUtcDate(e.start.dateTime)) !== todayStr) return false;
+            if (e.isAllDay) return true;
+            return toUtcDate(e.start.dateTime).getTime() >= oneHourAgoMs;
+          }),
         );
         setTomorrowEvents(
           events.filter(
@@ -281,19 +322,42 @@ export default function CalendarTab({ calendar, onCalendarChange }: Props) {
   // 今日/明日 events 表示
   // ============================================================
   function renderEvent(e: CalendarEvent) {
+    const meeting = detectMeetingLink(e);
     const loc = e.location?.displayName;
-    const isLink =
-      loc && /^https?:\/\//.test(loc.trim().split(/\s+/)[0] ?? "");
+    // 会議リンクが見つかった場合は location 文言（"Microsoft Teams 会議" や zoom URL生文字）を非表示
+    const showLoc = loc && meeting.type === null;
+    const locIsLink =
+      showLoc && /^https?:\/\//.test(loc.trim().split(/\s+/)[0] ?? "");
     return (
       <li key={e.id} className={`cal-event ${e.isAllDay ? "all-day" : ""}`}>
         <span className="cal-time">
           {e.isAllDay ? "終日" : formatTime(e.start.dateTime)}
         </span>
         <span className="cal-subject">{e.subject}</span>
-        {loc && (
+        {meeting.type === "teams" && (
+          <button
+            type="button"
+            className="meeting-link meeting-teams"
+            title={`Teams 会議に参加\n${meeting.url}`}
+            onClick={() => meeting.url && shellOpen(meeting.url).catch(() => {})}
+          >
+            Teams
+          </button>
+        )}
+        {meeting.type === "zoom" && (
+          <button
+            type="button"
+            className="meeting-link meeting-zoom"
+            title={`Zoom 会議に参加\n${meeting.url}`}
+            onClick={() => meeting.url && shellOpen(meeting.url).catch(() => {})}
+          >
+            Zoom
+          </button>
+        )}
+        {showLoc && (
           <span className="cal-loc">
             📍{" "}
-            {isLink ? (
+            {locIsLink ? (
               <a
                 href="#"
                 onClick={(ev) => {

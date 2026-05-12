@@ -1567,3 +1567,38 @@ body {
   font-size: 12px;
   padding: 6px 8px;
 }
+
+/* ============================================================
+   CalendarTab 会議リンクバッジ (beta.19)
+   ============================================================ */
+.meeting-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: white;
+  letter-spacing: 0.3px;
+  transition: opacity 0.15s, transform 0.05s;
+}
+.meeting-link:hover { opacity: 0.85; }
+.meeting-link:active { transform: scale(0.96); }
+.meeting-teams {
+  background: #4b53bc;
+}
+.meeting-teams:hover {
+  background: #5b62cb;
+  opacity: 1;
+}
+.meeting-zoom {
+  background: #2d8cff;
+}
+.meeting-zoom:hover {
+  background: #4ca0ff;
+  opacity: 1;
+}
