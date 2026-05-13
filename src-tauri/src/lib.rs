@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Sha256, Digest};
 use rand::RngCore;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod kc_auth;
@@ -251,7 +253,22 @@ async fn start_oauth_flow(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default();
+
+    // Windows/Linux: 2つ目の起動を既存プロセスに転送（deep-link callback がここに来る）
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
